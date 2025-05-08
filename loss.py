@@ -4,6 +4,8 @@ import diffrax
 import equinox as eqx
 import jax.numpy as jnp
 
+from collections.abc import Callable
+
 def temporal_cross_entropy_loss(logits, label, scale, **kwargs):
 
     log_probs = jax.nn.log_softmax(logits, axis=-1)
@@ -407,13 +409,25 @@ def make_batch_loss_fn(
     
     return batch_loss_fn
 
+def make_function_list(components: list[Callable | str]):
+
+    new_list = []
+    for component in components:
+        if isinstance(component, str):
+            component = globals[component]
+        if not isinstance(component, Callable):
+            raise ValueError(f"Components must be str or Callable, got {type(component)}")
+        new_list.append(component)
+    
+    return new_list
+
 def make_loss_and_metric_fn(
-    loss_components: list[callable],
+    loss_components: list[Callable | str],
     loss_fn_kwargs: dict,
-    temporal_weight_fns: list[callable],
+    temporal_weight_fns: list[Callable | str],
     temporal_weight_fn_kwargs: dict,
     loss_scales: list[float] = None,
-    metric_fns: list[callable] = temporal_predictions,
+    metric_fns: list[Callable | str] = [temporal_predictions,],
     metric_fn_kwargs: dict = {},
 ):
 
@@ -428,6 +442,10 @@ def make_loss_and_metric_fn(
 
     if type(metric_fns) != list:
         metric_fns = [metric_fns]
+
+    loss_components = make_function_list(loss_components)
+    temporal_weight_fns = make_function_list(loss_components)
+    metric_fns = make_function_list(loss_components)
 
     batch_loss_fns = [
         make_batch_loss_fn(

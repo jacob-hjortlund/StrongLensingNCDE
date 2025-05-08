@@ -16,23 +16,25 @@ training:
     num_workers: 0
     pin_memory: False
     sample_redshift: True
-    sample_redshift_probs: ${python:jnp.array([1.0, 0.0, 0.0])}
+    sample_redshift_probs: [1.0, 0.0, 0.0]
     max_obs: False
   loss_settings:
     loss_components:
-      - ${python:loss.temporal_cross_entropy_loss}
+      - temporal_cross_entropy_loss
     loss_fn_kwargs: {}
-    metric_fns: ${python:loss.temporal_predictions}
+    metric_fns:
+      - temporal_predictions
     metric_fn_kwargs: {}
-    temporal_weight_fns: ${python:loss.unit_weight_fn}
+    temporal_weight_fns: 
+      - unit_weight_fn
     temporal_weight_fn_kwargs: {}
-  lr_schedule_fn: ${python:optax.schedules.warmup_cosine_decay_schedule}
+  lr_schedule_fn: warmup_cosine_decay_schedule
   lr_schedule_settings:
     num_warmup_epochs: 5
     init_value: 1e-6 # Initial learning rate
     peak_value: 2e-3 # Peak learning rate
     end_value: 1e-6 # Final learning rate
-  optimizer_fn: ${python:optax.adamw}
+  optimizer_fn: adamw
   training_settings:
     patience: 10
     verbose_steps: True
@@ -40,8 +42,9 @@ training:
 
 model:
   name: xe_loss_64
-  save_path: /cfs/home/jahj0154/StrongLensingNCDE/Results
-  model_class: ${python:models.PoolingONCDEClassifier}
+  save_dir: /cfs/home/jahj0154/StrongLensingNCDE/Results
+  save_path: "${model.save_dir}/${model.name}"
+  class: PoolingONCDEClassifier
   hyperparams:
     input_feature_size: 33
     representation_size: 8
@@ -49,7 +52,7 @@ model:
     ncde_depth: 1
     ncde_solver: Tsit5     # you can still pass these as strings…
     ncde_adjoint: ReversibleAdjoint
-    ncde_max_steps: ${eval:2**20}
+    ncde_max_steps: 1048576
     classifier_width: 128
     classifier_depth: 2
     num_classes: 11

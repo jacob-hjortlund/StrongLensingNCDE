@@ -24,7 +24,7 @@ def train(cfg: DictConfig) -> None:
     rng_key = jr.PRNGKey(cfg['seed'])
 
     data_path = Path(cfg['training']['path'])
-    save_path = Path(cfg['model']['save_path']) / cfg['model']['name']
+    save_path = Path(cfg['model']['save_path'])
     save_path.mkdir(parents=True, exist_ok=True)
     
     train_path = data_path / "jolteon_train.h5"
@@ -45,6 +45,10 @@ def train(cfg: DictConfig) -> None:
         specz_norm, specz_err_norm, photoz_norm, photoz_err_norm
     )
 
+    if cfg['training']['data_settings']['sample_redshift_probs']:
+        cfg['training']['data_settings']['sample_redshift_probs'] = jnp.asarray(
+            cfg['training']['data_settings']['sample_redshift_probs']
+        )
     train_dataloader, train_dataset = datasets.make_dataloader(
         h5_path=train_path,
         flux_transform=flux_norm,
@@ -80,30 +84,50 @@ def train(cfg: DictConfig) -> None:
     warmup_steps = num_warmup_epochs * steps_per_epoch
     total_steps = warmup_steps + decay_steps
 
-    lr_schedule = cfg['training']['lr_schedule_fn'](
+    lr_schedule_fn = getattr(
+        optax.schedules,
+        cfg['training']['lr_schedule_fn']
+    )
+    lr_schedule = lr_schedule_fn(
         warmup_steps=warmup_steps,
         decay_steps=total_steps,
         **cfg['training']['lr_schedule_settings']
     )
 
-    optimizer = optax.inject_hyperparams(
+    optimizer_fn = getattr(
+        optax,
         cfg['training']['optimizer_fn']
+    )
+    optimizer = optax.inject_hyperparams(
+        optimizer_fn
     )(lr_schedule)
 
     # ------------------------- Model Setup and Training ------------------------- #
 
+    model_class = getattr(
+        models,
+        cfg['model']['class']
+    )
     model = utils.make_model(
         key=rng_key,
-        **cfg['model']
+        model_class=model_class,
+        **cfg['model']['hyperparams']
     )
     utils.save_hyperparams(save_path / "hyperparams.eqx", cfg['model']['hyperparams'])
+
+    if isinstance(
+        cfg['training']['loss_settings']['loss_components'], str
+    ):
+        num_loss_components = 1
+    else:
+        num_loss_components = len(
+            cfg['training']['loss_settings']['loss_components']
+        )
 
     model, optimizer_state, train_log, val_log = training.training_loop(
         model=model,
         loss_fn=loss_fn,
-        num_loss_components=len(
-            cfg['training']['loss_settings']['loss_components']
-        ),
+        num_loss_components=num_loss_components,
         optimizer=optimizer,
         train_dataloader=train_dataloader,
         val_dataloader=val_dataloader,
