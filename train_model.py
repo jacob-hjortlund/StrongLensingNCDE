@@ -19,7 +19,8 @@ import hydra
 from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
-@hydra.main(config_path="./conf", config_name="config")
+
+@hydra.main(version_base=None, config_path="./config", config_name="config")
 def train(cfg: DictConfig) -> None:
 
     print(f"\nWorking directory : {os.getcwd()}")
@@ -31,12 +32,12 @@ def train(cfg: DictConfig) -> None:
     save_path = Path(cfg['model']['save_path'])
     save_path.mkdir(parents=True, exist_ok=True)
     
-    train_path = data_path / "jolteon_train.h5"
-    val_path = data_path / "jolteon_val.h5"
+    train_path = data_path / "train.h5"
+    val_path = data_path / "val.h5"
 
     # ---------------------------- Create Dataloaders ---------------------------- #
 
-    stats = np.load(data_path / "jolteon_train_statistics.npz", allow_pickle=True)['arr_0'].tolist()
+    stats = np.load(data_path / "train_statistics.npz", allow_pickle=True)['arr_0'].tolist()
 
     flux_norm = datasets.create_normalization_func(stats, "TRANS_FLUX")
     flux_err_norm = datasets.create_normalization_func(stats, "TRANS_FLUX_ERR")
@@ -49,10 +50,6 @@ def train(cfg: DictConfig) -> None:
         specz_norm, specz_err_norm, photoz_norm, photoz_err_norm
     )
 
-    if cfg['training']['data_settings']['sample_redshift_probs']:
-        cfg['training']['data_settings']['sample_redshift_probs'] = jnp.asarray(
-            cfg['training']['data_settings']['sample_redshift_probs']
-        )
     train_dataloader, train_dataset = datasets.make_dataloader(
         h5_path=train_path,
         flux_transform=flux_norm,
@@ -78,15 +75,14 @@ def train(cfg: DictConfig) -> None:
     # ---------------------------- Loss Function Setup --------------------------- #
 
     loss_fn = loss.make_loss_and_metric_fn(
-        **cfg['training']['loss_settings']
+        **OmegaConf.to_container(cfg['training']['loss_settings'])
     )
 
     # ------------------------------ Optimizer Setup ----------------------------- #
 
-    num_warmup_epochs = cfg['training']['optimizer_settings']['num_warmup_epochs']
-    decay_steps = num_epochs * steps_per_epoch
+    num_warmup_epochs = cfg['training']['num_warmup_epochs']
     warmup_steps = num_warmup_epochs * steps_per_epoch
-    total_steps = warmup_steps + decay_steps
+    total_steps = warmup_steps + num_epochs * steps_per_epoch
 
     lr_schedule_fn = getattr(
         optax.schedules,
@@ -115,9 +111,9 @@ def train(cfg: DictConfig) -> None:
     model = utils.make_model(
         key=rng_key,
         model_class=model_class,
-        **cfg['model']['hyperparams']
+        hyperparams=cfg['model']['hyperparams']
     )
-    utils.save_hyperparams(save_path / "hyperparams.eqx", cfg['model']['hyperparams'])
+    utils.save_hyperparams(save_path / "hyperparams.eqx", OmegaConf.to_container(cfg['model']['hyperparams']))
 
     if isinstance(
         cfg['training']['loss_settings']['loss_components'], str
