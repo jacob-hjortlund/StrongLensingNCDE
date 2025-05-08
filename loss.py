@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 from collections.abc import Callable
 
-def temporal_cross_entropy_loss(logits, label, scale, **kwargs):
+def temporal_cross_entropy_loss(logits, label, scale=1.0, **kwargs):
 
     log_probs = jax.nn.log_softmax(logits, axis=-1)
     loss = -scale * log_probs[:, label]
@@ -414,7 +414,7 @@ def make_function_list(components: list[Callable | str]):
     new_list = []
     for component in components:
         if isinstance(component, str):
-            component = globals[component]
+            component = globals()[component]
         if not isinstance(component, Callable):
             raise ValueError(f"Components must be str or Callable, got {type(component)}")
         new_list.append(component)
@@ -444,8 +444,8 @@ def make_loss_and_metric_fn(
         metric_fns = [metric_fns]
 
     loss_components = make_function_list(loss_components)
-    temporal_weight_fns = make_function_list(loss_components)
-    metric_fns = make_function_list(loss_components)
+    temporal_weight_fns = make_function_list(temporal_weight_fns)
+    metric_fns = make_function_list(metric_fns)
 
     batch_loss_fns = [
         make_batch_loss_fn(
