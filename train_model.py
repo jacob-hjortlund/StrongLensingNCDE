@@ -1,3 +1,4 @@
+import os
 import jax
 jax.config.update("jax_enable_x64", True)
 
@@ -20,6 +21,9 @@ from omegaconf import DictConfig, OmegaConf
 
 @hydra.main(config_path="./conf", config_name="config")
 def train(cfg: DictConfig) -> None:
+
+    print(f"\nWorking directory : {os.getcwd()}")
+    print(f"Hydra Output directory  : {hydra.core.hydra_config.HydraConfig.get().runtime.output_dir}\n")
 
     rng_key = jr.PRNGKey(cfg['seed'])
 
