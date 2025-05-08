@@ -29,8 +29,8 @@ training:
       - unit_weight_fn
     temporal_weight_fn_kwargs: {}
   lr_schedule_fn: warmup_cosine_decay_schedule
+  num_warmup_epochs: 5
   lr_schedule_settings:
-    num_warmup_epochs: 5
     init_value: 1e-6 # Initial learning rate
     peak_value: 2e-3 # Peak learning rate
     end_value: 1e-6 # Final learning rate
