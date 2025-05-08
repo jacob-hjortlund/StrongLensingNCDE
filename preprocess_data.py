@@ -8,8 +8,8 @@ from tqdm import tqdm
 from pathlib import Path
 from astropy.coordinates import SkyCoord
 
-jolteon_path = Path('/home/jacob/PhD/Projects/jolteon_model/Data/JOLTEON')
-out_path = Path('/home/jacob/PhD/Projects/jolteon_model/Data')
+jolteon_path = Path('/cfs/home/jahj0154/Data/JOLTEON_V1')
+out_path = Path('/cfs/home/jahj0154/Data/JOLTEON_V1_PREPROCESSED')
 
 out_name_prefix = "jolteon"
 detection_limit = 5.
