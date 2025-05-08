@@ -1,0 +1,181 @@
+import json
+import optax
+import models
+import training
+
+import numpy as np
+import equinox as eqx
+import jax.random as jr
+
+from tqdm import trange
+from collections.abc import Callable
+
+def make_model(*, key, model_class, hyperparams):
+    
+    return model_class(key=key, **hyperparams)
+
+def save_hyperparams(filename, hyperparams):
+    with open(filename, "wb") as f:
+        hyperparam_str = json.dumps(hyperparams)
+        f.write((hyperparam_str).encode())
+
+def save_model(filename, model):
+    with open(filename, "wb") as f:
+        eqx.tree_serialise_leaves(f, model)
+
+def make_lr_finder_schedule(lr_min: float, lr_max: float, num_steps: int):
+    return optax.exponential_decay(
+        init_value=lr_min,
+        transition_steps=num_steps,
+        decay_rate=lr_max / lr_min,
+        staircase=False,
+    )
+
+def infinite_dataloader(dataloader):
+    while True:
+        for data in dataloader:
+            yield data
+
+def _lr_range_test(
+    model,
+    loss_fn,
+    train_loader,
+    num_steps=200,
+    lr_min=1e-7,
+    lr_max=1.0,
+    optimizer=optax.adamw
+):
+    # rebuild schedule & optimizer inside in case you want different ranges
+    lr_schedule = make_lr_finder_schedule(lr_min, lr_max, num_steps)
+    optimizer = optimizer(learning_rate=lr_schedule)
+
+    optimizer_state = optimizer.init(
+        eqx.filter(model, eqx.is_inexact_array)
+    )
+
+    train_step = training.make_train_step(optimizer, loss_fn)
+
+    lrs = []
+    losses = []
+    for step, batch in zip(trange(num_steps), train_loader):
+        
+
+        data = [output.numpy() for output in batch]
+        loss, aux, model, optimizer_state = train_step(
+            model, data, optimizer_state
+        )
+
+        lr = lr_schedule(step)
+        lrs.append(lr)
+        losses.append(float(loss))
+    return np.array(lrs), np.array(losses)
+
+def lr_range_test(
+    rng_key,
+    model_hyperparams,
+    loss_fn,
+    train_loader,
+    model_class=models.PoolingONCDEClassifier,
+    num_steps=200,
+    lr_min=1e-7,
+    lr_max=1.0,
+    repeats=1,
+    optimizer=optax.adamw
+):
+
+    train_loader = infinite_dataloader(train_loader)
+
+    all_lrs = np.zeros((repeats, num_steps))
+    all_losses = np.zeros((repeats, num_steps))
+    
+    for repeat in range(repeats):
+        print(f"Repeat {repeat}")
+
+        model_key, rng_key = jr.split(rng_key)
+        model = make_model(
+            key=model_key,
+            model_class=model_class,
+            hyperparams=model_hyperparams,
+        )
+
+        lrs, losses = _lr_range_test(
+            model,
+            loss_fn,
+            train_loader,
+            num_steps=num_steps,
+            lr_min=lr_min,
+            lr_max=lr_max,
+            optimizer=optimizer
+        )
+
+        all_lrs[repeat] = lrs
+        all_losses[repeat] = losses
+
+    #lrs = np.mean(lrs, axis=0)
+    #losses = np.mean(losses, axis=0)
+
+    return all_lrs, all_losses
+
+import numpy as np
+
+def compute_day_snapshots(times: np.ndarray, trigger_idx: int) -> np.ndarray:
+    """
+    Compute the step-by-step time “snapshots” around a trigger.
+
+    Parameters
+    ----------
+    times : (T,) float
+        Array of sample times (in days, can be negative).
+    trigger_idx : int
+        Index into `times` where the trigger (e.g. time == 0) occurs.
+
+    Returns
+    -------
+    snapshots : (N, D) float
+        A 2D array where:
+          - D = number of unique calendar‐day bins = len(np.unique(floor(times)))
+          - N = total number of samples on/after the trigger day
+        Each row is a copy of the running‐mean‐vector of day-times
+        after including one more sample from the trigger day onward.
+    """
+    # -- helper to compute initial pre-trigger day-means --
+    def initial_average_days(x: np.ndarray, day_trigger: int) -> np.ndarray:
+        # (a) compute calendar‐day indices of x
+        day_idx_local = np.floor(x).astype(int)
+        # (b) list all days
+        all_days = np.unique(day_idx_local)
+        # (c) init output array
+        x_day = np.zeros(len(all_days), dtype=float)
+        # (d) fill only for days *before* the trigger
+        for i, d in enumerate(all_days[all_days < day_trigger]):
+            mask = (day_idx_local == d)
+            x_day[i] = x[mask].mean()
+        return x_day
+
+    # 1) floor to get each sample’s calendar-day index
+    day_idx = np.floor(times).astype(int)
+    # 2) find which day the trigger sits in
+    day_trigger = day_idx[trigger_idx]
+    # 3) find all unique days and how many samples in each
+    days, day_counts = np.unique(day_idx, return_counts=True)
+
+    # 4) start history with the pre-trigger means
+    history = [initial_average_days(times, day_trigger)]
+
+    # 5) now step forward: for each day ≥ trigger, for each sample in that day
+    for day, count in zip(days[days >= day_trigger],
+                          day_counts[days >= day_trigger]):
+        # index of this day in the full `days` array
+        i_day = np.where(days == day)[0][0]
+        # which sample-positions belong to this day
+        idxs = np.where(day_idx == day)[0]
+
+        for j in range(count):
+            snapshot = np.copy(history[-1])
+            # running‐mean of the day-times up to the j-th sample in this day
+            running_mean = np.mean(times[idxs[: j + 1]])
+            snapshot[i_day] = running_mean
+            history.append(snapshot)
+
+    # drop the very first “pre-trigger only” entry
+    return np.asarray(history[1:])
