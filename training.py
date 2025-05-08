@@ -163,9 +163,9 @@ def inner_loop(
     for step in range(number_of_steps):
         
         if fixed_lr is None:
-            lr = optimizer_state.hyperparams['learning_rate']
+            current_lr = optimizer_state.hyperparams['learning_rate']
         else:
-            lr = fixed_lr
+            current_lr = fixed_lr
             
         data = next(dataloader)
         data = [output.numpy() for output in data]
@@ -180,7 +180,7 @@ def inner_loop(
         step_metrics = aux[1]
         losses.append(step_losses)
         metrics.append(step_metrics)
-        lrs.append(lr)
+        lrs.append(current_lr)
         
         # TODO: Replace with function that handles aux
         if verbose:
@@ -200,7 +200,7 @@ def inner_loop(
                 f"Flip Rate: {transition_rate*100:.2f}% | " +
                 f"N Flips: {num_transitions} | " +
                 f"TS Acc.: {ts_accuracy*100:.2f}% | " +
-                f"LR: {lr:.6e} | " +
+                f"LR: {current_lr:.6e} | " +
                 f"Step Dur.: {step_duration / 60:.2f} min"
             )
 
@@ -379,10 +379,10 @@ def training_loop(
             print(train_string)
             print(val_string)
         
-        training_epoch_losses[epoch] = train_aux[0]
-        training_epoch_metrics[epoch] = avg_train_metrics
-        val_epoch_losses[epoch] = val_aux[0]
-        val_epoch_metrics[epoch] = avg_val_metrics
+        training_epoch_losses[epoch-1] = train_aux[0]
+        training_epoch_metrics[epoch-1] = avg_train_metrics
+        val_epoch_losses[epoch-1] = val_aux[0]
+        val_epoch_metrics[epoch-1] = avg_val_metrics
 
         if avg_val_loss > best_val_loss:
             
@@ -393,7 +393,7 @@ def training_loop(
                 np.save(save_path / "val_losses.npy", val_epoch_losses)
                 np.save(save_path / "val_metrics.npy", val_epoch_metrics)
             
-            best_val_epoch = epoch
+            best_val_epoch = epoch-1
             best_val_loss = avg_val_loss
             wait = 0
         else:
