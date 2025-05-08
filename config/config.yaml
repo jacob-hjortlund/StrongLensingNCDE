@@ -9,9 +9,9 @@ seed: 42
 training:
   path: /cfs/home/jahj0154/Data/JOLTEON_V1_PREPROCESSED
   data_settings:
-    steps_per_epoch: 60
+    steps_per_epoch: 120
     num_full_passes: 10
-    batch_size: 128
+    batch_size: 64
     shuffle: True
     num_workers: 0
     pin_memory: False
@@ -41,7 +41,7 @@ training:
     verbose_epochs:
 
 model:
-  name: xe_loss_64
+  name: specz_xe_loss_64
   save_dir: /cfs/home/jahj0154/StrongLensingNCDE/Results
   save_path: "${model.save_dir}/${model.name}"
   class: PoolingONCDEClassifier
