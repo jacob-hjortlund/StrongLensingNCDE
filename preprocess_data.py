@@ -141,171 +141,171 @@ val_heads = unique_heads[idx_val]
 
 print('Calculating training statistics...')
 
-# # Calculate feature statistics
-# transformed_fluxes = []
-# transformed_flux_errs = []
+# Calculate feature statistics
+transformed_fluxes = []
+transformed_flux_errs = []
 
-# for snid in tqdm(train_snids):
-#     idx_snid = train_heads['SNID'] == snid
-#     snid_heads = train_heads.loc[idx_snid]
+for snid in tqdm(train_snids):
+    idx_snid = train_heads['SNID'] == snid
+    snid_heads = train_heads.loc[idx_snid]
 
-#     for (_, snid_head) in snid_heads.iterrows():
-#         img_phot = prep.get_light_curve(snid_head, phots_list)
-#         mjd = img_phot['MJD']
-#         snr = img_phot['FLUXCAL'] / img_phot['FLUXCALERR']
-#         idx_detection = snr >= detection_limit
-#         img_phot['DETECTION'] = 0.
-#         img_phot.loc[idx_detection, 'DETECTION'] = 1.
+    for (_, snid_head) in snid_heads.iterrows():
+        img_phot = prep.get_light_curve(snid_head, phots_list)
+        mjd = img_phot['MJD']
+        snr = img_phot['FLUXCAL'] / img_phot['FLUXCALERR']
+        idx_detection = snr >= detection_limit
+        img_phot['DETECTION'] = 0.
+        img_phot.loc[idx_detection, 'DETECTION'] = 1.
         
-#         idx_trigger = np.where(img_phot['DETECTION'])[0][0]
-#         t_trigger = mjd[idx_trigger]
-#         delta_trigger = mjd - t_trigger
-#         idx_excluded = (delta_trigger < delta_trigger_min) | (delta_trigger > delta_trigger_max)
-#         img_phot.loc[idx_excluded, ['FLUXCAL', 'FLUXCALERR']] = np.nan
+        idx_trigger = np.where(img_phot['DETECTION'])[0][0]
+        t_trigger = mjd[idx_trigger]
+        delta_trigger = mjd - t_trigger
+        idx_excluded = (delta_trigger < delta_trigger_min) | (delta_trigger > delta_trigger_max)
+        img_phot.loc[idx_excluded, ['FLUXCAL', 'FLUXCALERR']] = np.nan
 
-#         transformed_flux = flux_transform(img_phot['FLUXCAL']).values
-#         transformed_flux_err = flux_err_transform(img_phot['FLUXCALERR']).values
+        transformed_flux = flux_transform(img_phot['FLUXCAL']).values
+        transformed_flux_err = flux_err_transform(img_phot['FLUXCALERR']).values
 
-#         transformed_fluxes.append(transformed_flux)
-#         transformed_flux_errs.append(transformed_flux_err)
+        transformed_fluxes.append(transformed_flux)
+        transformed_flux_errs.append(transformed_flux_err)
 
-# transformed_fluxes = np.concatenate(transformed_fluxes)
-# transformed_flux_errs = np.concatenate(transformed_flux_errs)
+transformed_fluxes = np.concatenate(transformed_fluxes)
+transformed_flux_errs = np.concatenate(transformed_flux_errs)
 
-# transformed_flux_mean = np.nanmean(transformed_fluxes)
-# transformed_flux_std = np.nanstd(transformed_fluxes)
-# transformed_flux_err_mean = np.nanmean(transformed_flux_errs)
-# transformed_flux_err_std = np.nanstd(transformed_flux_errs)
-# transformed_specz_mean = np.nanmean(train_heads['TRANS_SPECZ'])
-# transformed_specz_std = np.nanstd(train_heads['TRANS_SPECZ'])
-# transformed_photoz_mean = np.nanmean(train_heads['TRANS_PHOTOZ'])
-# transformed_photoz_std = np.nanstd(train_heads['TRANS_PHOTOZ'])
-# transformed_photoz_err_mean = np.nanmean(train_heads['TRANS_PHOTOZ_ERR'])
-# transformed_photoz_err_std = np.nanstd(train_heads['TRANS_PHOTOZ_ERR'])
+transformed_flux_mean = np.nanmean(transformed_fluxes)
+transformed_flux_std = np.nanstd(transformed_fluxes)
+transformed_flux_err_mean = np.nanmean(transformed_flux_errs)
+transformed_flux_err_std = np.nanstd(transformed_flux_errs)
+transformed_specz_mean = np.nanmean(train_heads['TRANS_SPECZ'])
+transformed_specz_std = np.nanstd(train_heads['TRANS_SPECZ'])
+transformed_photoz_mean = np.nanmean(train_heads['TRANS_PHOTOZ'])
+transformed_photoz_std = np.nanstd(train_heads['TRANS_PHOTOZ'])
+transformed_photoz_err_mean = np.nanmean(train_heads['TRANS_PHOTOZ_ERR'])
+transformed_photoz_err_std = np.nanstd(train_heads['TRANS_PHOTOZ_ERR'])
 
-# statistics = {
-#     'TRANS_FLUX_MEAN': transformed_flux_mean,
-#     'TRANS_FLUX_STD': transformed_flux_std,
-#     'TRANS_FLUX_ERR_MEAN': transformed_flux_err_mean,
-#     'TRANS_FLUX_ERR_STD': transformed_flux_err_std,
-#     'TRANS_SPECZ_MEAN': transformed_specz_mean,
-#     'TRANS_SPECZ_STD': transformed_specz_std,
-#     'TRANS_PHOTOZ_MEAN': transformed_photoz_mean,
-#     'TRANS_PHOTOZ_STD': transformed_photoz_std,
-#     'TRANS_PHOTOZ_ERR_MEAN': transformed_photoz_mean,
-#     'TRANS_PHOTOZ_ERR_STD': transformed_photoz_std
-# }
+statistics = {
+    'TRANS_FLUX_MEAN': transformed_flux_mean,
+    'TRANS_FLUX_STD': transformed_flux_std,
+    'TRANS_FLUX_ERR_MEAN': transformed_flux_err_mean,
+    'TRANS_FLUX_ERR_STD': transformed_flux_err_std,
+    'TRANS_SPECZ_MEAN': transformed_specz_mean,
+    'TRANS_SPECZ_STD': transformed_specz_std,
+    'TRANS_PHOTOZ_MEAN': transformed_photoz_mean,
+    'TRANS_PHOTOZ_STD': transformed_photoz_std,
+    'TRANS_PHOTOZ_ERR_MEAN': transformed_photoz_mean,
+    'TRANS_PHOTOZ_ERR_STD': transformed_photoz_std
+}
 
-# np.savez(
-#     out_path / f"train_statistics.npz",
-#     statistics
-# )
+np.savez(
+    out_path / f"train_statistics.npz",
+    statistics
+)
 
 print('Creating training set...')
 
-# nmax_train = train_heads['NOBS'].max()
-# with h5py.File(out_path / f"train.h5", "a") as h5file:
+nmax_train = train_heads['NOBS'].max()
+with h5py.File(out_path / f"train.h5", "a") as h5file:
 
-#     for snid in tqdm(train_snids):
+    for snid in tqdm(train_snids):
         
-#         idx_snid = train_heads['MATCH_SNID'] == snid
-#         snid_heads = train_heads.loc[idx_snid]
+        idx_snid = train_heads['MATCH_SNID'] == snid
+        snid_heads = train_heads.loc[idx_snid]
 
-#         binary_label = snid_heads['BINARY_LABEL'].iloc[0]
-#         num_imgs = snid_heads['NUM_LCS'].iloc[0]
-#         num_lcs = len(snid_heads)
-#         joint_multiclass_labels = prep.join_multiclass_labels(snid_heads, max_images=max_images)
+        binary_label = snid_heads['BINARY_LABEL'].iloc[0]
+        num_imgs = snid_heads['NUM_LCS'].iloc[0]
+        num_lcs = len(snid_heads)
+        joint_multiclass_labels = prep.join_multiclass_labels(snid_heads, max_images=max_images)
 
-#         snid_phots = prep.join_transient_images(snid_heads, phots_list, max_images=max_images)
-#         transformed_snid_phots, trigger_index = prep.transform_image_timeseries(snid_phots, flux_transform, flux_err_transform)
-#         trigger_time = transformed_snid_phots['MJD'].values[trigger_index]
+        snid_phots = prep.join_transient_images(snid_heads, phots_list, max_images=max_images)
+        transformed_snid_phots, trigger_index = prep.transform_image_timeseries(snid_phots, flux_transform, flux_err_transform)
+        trigger_time = transformed_snid_phots['MJD'].values[trigger_index]
 
-#         all_t_neg = np.all(transformed_snid_phots['TRANS_MJD'].values < 0)
-#         if all_t_neg:
-#             print(f"All negative times on SNID: {snid}")
+        all_t_neg = np.all(transformed_snid_phots['TRANS_MJD'].values < 0)
+        if all_t_neg:
+            print(f"All negative times on SNID: {snid}")
 
-#         columns_to_keep = []
-#         if len(columns_to_keep) == 0:
-#             flux_cols = [col for col in transformed_snid_phots.columns if 'FLUX_' in col]
-#             flux_err_columns = [col for col in transformed_snid_phots.columns if 'FLUXERR_' in col]
-#             det_columns = [col for col in transformed_snid_phots.columns if 'DET_' in col]
-#             obs_columns = [col for col in transformed_snid_phots.columns if 'OBS_' in col]
-#             redshift_columns = [col for col in transformed_snid_phots.columns if 'Z' in col and "TRANS" in col]
-#             columns_to_keep = ['MJD', 'TRANS_MJD'] + flux_cols + flux_err_columns + det_columns + obs_columns + redshift_columns
+        columns_to_keep = []
+        if len(columns_to_keep) == 0:
+            flux_cols = [col for col in transformed_snid_phots.columns if 'FLUX_' in col]
+            flux_err_columns = [col for col in transformed_snid_phots.columns if 'FLUXERR_' in col]
+            det_columns = [col for col in transformed_snid_phots.columns if 'DET_' in col]
+            obs_columns = [col for col in transformed_snid_phots.columns if 'OBS_' in col]
+            redshift_columns = [col for col in transformed_snid_phots.columns if 'Z' in col and "TRANS" in col]
+            columns_to_keep = ['MJD', 'TRANS_MJD'] + flux_cols + flux_err_columns + det_columns + obs_columns + redshift_columns
 
-#         transformed_snid_phots = transformed_snid_phots[columns_to_keep]
-#         variable_names = ['_'.join(col.split('_')[:-1]) for col in transformed_snid_phots.columns[2:]]
-#         variable_names = list(dict.fromkeys(variable_names))
-#         flux_names = variable_names[:6]
-#         fluxerr_names = variable_names[6:12]
-#         det_obs_names = variable_names[12:24]
-#         redshift_names = variable_names[24:]
+        transformed_snid_phots = transformed_snid_phots[columns_to_keep]
+        variable_names = ['_'.join(col.split('_')[:-1]) for col in transformed_snid_phots.columns[2:]]
+        variable_names = list(dict.fromkeys(variable_names))
+        flux_names = variable_names[:6]
+        fluxerr_names = variable_names[6:12]
+        det_obs_names = variable_names[12:24]
+        redshift_names = variable_names[24:]
 
-#         flux_arrs = []
-#         fluxerr_arrs = []
-#         det_obs_arrs = []
-#         redshift_arrs = []
+        flux_arrs = []
+        fluxerr_arrs = []
+        det_obs_arrs = []
+        redshift_arrs = []
 
-#         for i in range(1, max_images + 1):
-#             flux_cols = [f"{var}_{i}" for var in flux_names]
-#             fluxerr_cols = [f"{var}_{i}" for var in fluxerr_names]
-#             det_obs_cols = [f"{var}_{i}" for var in det_obs_names]
-#             redshift_cols = [f"{var}_{i}" for var in redshift_names]
+        for i in range(1, max_images + 1):
+            flux_cols = [f"{var}_{i}" for var in flux_names]
+            fluxerr_cols = [f"{var}_{i}" for var in fluxerr_names]
+            det_obs_cols = [f"{var}_{i}" for var in det_obs_names]
+            redshift_cols = [f"{var}_{i}" for var in redshift_names]
 
-#             flux_arrs.append(transformed_snid_phots[flux_cols].to_numpy())
-#             fluxerr_arrs.append(transformed_snid_phots[fluxerr_cols].to_numpy())
-#             det_obs_arrs.append(transformed_snid_phots[det_obs_cols].to_numpy())
-#             redshift_arrs.append(transformed_snid_phots[redshift_cols].to_numpy())
+            flux_arrs.append(transformed_snid_phots[flux_cols].to_numpy())
+            fluxerr_arrs.append(transformed_snid_phots[fluxerr_cols].to_numpy())
+            det_obs_arrs.append(transformed_snid_phots[det_obs_cols].to_numpy())
+            redshift_arrs.append(transformed_snid_phots[redshift_cols].to_numpy())
 
-#         flux_3d = np.stack(flux_arrs, axis=0)
-#         fluxerr_3d = np.stack(fluxerr_arrs, axis=0)
-#         det_obs_3d = np.stack(det_obs_arrs, axis=0)
-#         redshift_3d = np.stack(redshift_arrs, axis=0)
+        flux_3d = np.stack(flux_arrs, axis=0)
+        fluxerr_3d = np.stack(fluxerr_arrs, axis=0)
+        det_obs_3d = np.stack(det_obs_arrs, axis=0)
+        redshift_3d = np.stack(redshift_arrs, axis=0)
 
-#         grp = h5file.create_group(str(snid))
-#         grp.attrs['MULTICLASS_LABEL'] = joint_multiclass_labels.astype('S')
-#         grp.attrs['BINARY_LABEL'] = np.asarray(binary_label, dtype='S')
-#         grp.attrs['NUM_LCS'] = num_lcs
-#         grp.attrs['NUM_IMAGES'] = num_imgs
-#         grp.attrs['TRIGGER_INDEX'] = trigger_index
-#         grp.attrs['TRIGGER_TIME'] = trigger_time
+        grp = h5file.create_group(str(snid))
+        grp.attrs['MULTICLASS_LABEL'] = joint_multiclass_labels.astype('S')
+        grp.attrs['BINARY_LABEL'] = np.asarray(binary_label, dtype='S')
+        grp.attrs['NUM_LCS'] = num_lcs
+        grp.attrs['NUM_IMAGES'] = num_imgs
+        grp.attrs['TRIGGER_INDEX'] = trigger_index
+        grp.attrs['TRIGGER_TIME'] = trigger_time
 
-#         t_dset = grp.create_dataset(
-#             "MJD", data=transformed_snid_phots['MJD'].values
-#         )
-#         t_dset.attrs["column_names"] = np.array(['MJD'], dtype='S')
+        t_dset = grp.create_dataset(
+            "MJD", data=transformed_snid_phots['MJD'].values
+        )
+        t_dset.attrs["column_names"] = np.array(['MJD'], dtype='S')
 
-#         trans_t_dset = grp.create_dataset(
-#             "TRANS_MJD", data=transformed_snid_phots['TRANS_MJD'].values
-#         )
-#         trans_t_dset.attrs["column_names"] = np.array(['MJD-MJD[0] / 1000'], dtype='S')
+        trans_t_dset = grp.create_dataset(
+            "TRANS_MJD", data=transformed_snid_phots['TRANS_MJD'].values
+        )
+        trans_t_dset.attrs["column_names"] = np.array(['MJD-MJD[0] / 1000'], dtype='S')
 
-#         flux_dset = grp.create_dataset(
-#             "FLUX", data=flux_3d
-#         )
-#         flux_dset.attrs["column_names"] = np.array(
-#             flux_names, dtype='S'
-#         )
-#         flux_err_dset = grp.create_dataset(
-#             "FLUX_ERR", data=fluxerr_3d
-#         )
-#         flux_err_dset.attrs["column_names"] = np.array(
-#             fluxerr_names, dtype='S'
-#         )
+        flux_dset = grp.create_dataset(
+            "FLUX", data=flux_3d
+        )
+        flux_dset.attrs["column_names"] = np.array(
+            flux_names, dtype='S'
+        )
+        flux_err_dset = grp.create_dataset(
+            "FLUX_ERR", data=fluxerr_3d
+        )
+        flux_err_dset.attrs["column_names"] = np.array(
+            fluxerr_names, dtype='S'
+        )
 
-#         detobs_dset = grp.create_dataset(
-#             "DETOBS", data=det_obs_3d
-#         )
-#         detobs_dset.attrs["column_names"] = np.array(
-#             det_obs_names, dtype='S'
-#         )
+        detobs_dset = grp.create_dataset(
+            "DETOBS", data=det_obs_3d
+        )
+        detobs_dset.attrs["column_names"] = np.array(
+            det_obs_names, dtype='S'
+        )
 
-#         redshift_dset = grp.create_dataset(
-#             "REDSHIFT", data=redshift_3d
-#         )
-#         redshift_dset.attrs["column_names"] = np.array(
-#             redshift_names, dtype='S'
-#         )
+        redshift_dset = grp.create_dataset(
+            "REDSHIFT", data=redshift_3d
+        )
+        redshift_dset.attrs["column_names"] = np.array(
+            redshift_names, dtype='S'
+        )
 
 print('Creating validation set...')
 
