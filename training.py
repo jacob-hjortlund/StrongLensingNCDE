@@ -227,6 +227,9 @@ def inner_loop(
         losses, (init_lr, final_lr), metrics
     )
 
+    if verbose:
+        print("\n")
+
     return avg_loss, model, optimizer_state, aux_vals
 
 def training_loop(
@@ -265,12 +268,11 @@ def training_loop(
         num_batches_in_dataset = len(train_dataloader)
         num_full_passes = number_of_epochs * steps_per_epoch / num_batches_in_dataset
         init_str = (
-            f"Num. Full Passes: {num_full_passes:.2f} | "+
+            f"\nNum. Full Passes: {num_full_passes:.2f} | "+
             f"Num. Epochs: {number_of_epochs} | " +
-            f"Batches per Epoch: {steps_per_epoch}"
+            f"Batches per Epoch: {steps_per_epoch}\n"
         )
         print(init_str)
-        print(" ")
 
     train_dataloader = infinite_dataloader(train_dataloader)
     val_dataloader = infinite_dataloader(val_dataloader)
@@ -308,8 +310,7 @@ def training_loop(
         last_train_lr = train_aux[4][-1]
 
         if verbose_steps:
-            print(" ")
-            print("Validation")
+            print("\nValidation")
         (
             avg_val_loss, model, _, val_aux
         ) = inner_loop(
@@ -321,8 +322,6 @@ def training_loop(
             number_of_steps=steps_per_epoch,
             verbose=verbose_steps
         )
-        if verbose_steps:
-            print(" ")
 
         epoch_duration = time.time() - t_epoch_init
 
@@ -371,16 +370,14 @@ def training_loop(
                 f"N Flips: {val_num_transitions} | " +
                 f"TS Acc.: {val_ts_accuracy*100:.2f}% | " +
                 f"LR Range: {val_init_lr:.2e} - {val_final_lr:.2e} | " +
-                f"Step Dur.: {avg_val_step_time / 60:.2f} min"
+                f"Step Dur.: {avg_val_step_time / 60:.2f} min\n"
             )
 
-            epoch_string = f"Epoch: {epoch} | Epoch Dur.: {epoch_duration / 60:.2f} min"
+            epoch_string = f"\nEpoch: {epoch} | Epoch Dur.: {epoch_duration / 60:.2f} min"
             
-            print(" ")
             print(epoch_string)
             print(train_string)
             print(val_string)
-            print(" ")
         
         training_epoch_losses[epoch] = train_aux[0]
         training_epoch_metrics[epoch] = avg_train_metrics
@@ -402,9 +399,7 @@ def training_loop(
         else:
             wait += 1
             if wait >= patience:
-                print(" ")
-                print(f"Stopping early at epoch {epoch} (no improvement in {patience} epochs)")
-                print(" ")
+                print(f"\nStopping early at epoch {epoch} (no improvement in {patience} epochs)\n")
                 break
 
             
@@ -427,14 +422,14 @@ def training_loop(
     train_ts_accuracy = training_epoch_metrics[best_val_epoch, 5]
 
     best_train_string = (
-        f"Train - " +
+        f"\nTrain - " +
         f"Loss: {avg_train_loss:.2f} | " +
         f"Stable Acc.: {train_stable_accuracy*100:.2f}% | " +
         f"T_0: {train_earliest_time:.2f} | " +
         f"Stable T_0: {train_stable_earliest_time:.2f} | " +
         f"Flip Rate: {train_transition_rate*100:.2f}% | " + 
         f"N Flips: {train_num_transitions} | " +
-        f"TS Acc.: {train_ts_accuracy*100:.2f}% | " 
+        f"TS Acc.: {train_ts_accuracy*100:.2f}%" 
     )
 
     val_stable_accuracy = val_epoch_metrics[best_val_epoch, 0]
@@ -452,17 +447,15 @@ def training_loop(
         f"Stable T_0: {val_stable_earliest_time:.2f} | " +
         f"Flip Rate: {val_transition_rate*100:.2f}% | " +
         f"N Flips: {val_num_transitions} | " +
-        f"TS Acc.: {val_ts_accuracy*100:.2f}% | "
+        f"TS Acc.: {val_ts_accuracy*100:.2f}%\n"
     )
 
     training_string = (
-        f"Training Time: {training_duration / 60:.2f} min | " +
+        f"\nTraining Time: {training_duration / 60:.2f} min | " +
         f"Avg. Epoch Time: {avg_epoch_duration / 60:.2f} | " +
-        f"Best Epoch: {best_val_epoch}" 
+        f"Best Epoch: {best_val_epoch}\n" 
     )
-    print(" ")
     print(training_string)
-    print(" ")
     print("Best Val Epoch Metrics:")
     print(best_train_string)
     print(best_val_string)
