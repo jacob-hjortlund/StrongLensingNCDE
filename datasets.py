@@ -67,7 +67,8 @@ class HDF5TimeSeriesDataset(Dataset):
         redshift_transform: callable = None,
         sample_redshift: bool = False,
         sample_redshift_probs: np.ndarray = None,
-        seed: int = 42
+        seed: int = 42,
+        **kwargs
     ):
         
         """
@@ -102,6 +103,8 @@ class HDF5TimeSeriesDataset(Dataset):
         self.flux_err_transform = flux_err_transform
         self.redshift_transform = redshift_transform
         self.sample_redshift = sample_redshift
+        if sample_redshift_probs:
+            sample_redshift_probs = np.asarray(sample_redshift_probs)
         self.sample_redshift_probs = sample_redshift_probs
         self.rng = np.random.default_rng(seed=seed)
         
