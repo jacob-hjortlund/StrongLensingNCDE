@@ -1,0 +1,57 @@
+# config.yaml
+# ────── add a defaults list (optional, but recommended)
+defaults:
+  - _self_
+
+
+seed: 42
+
+training:
+  path: /cfs/home/jahj0154/Data/JOLTEON_V1_PREPROCESSED
+  data_settings:
+    steps_per_epoch: 60
+    num_full_passes: 10
+    batch_size: 128
+    shuffle: True
+    num_workers: 0
+    pin_memory: False
+    sample_redshift: True
+    sample_redshift_probs: ${python:jnp.array([1.0, 0.0, 0.0])}
+    max_obs: False
+  loss_settings:
+    loss_components:
+      - ${python:loss.temporal_cross_entropy_loss}
+    loss_fn_kwargs: {}
+    metric_fns: ${python:loss.temporal_predictions}
+    metric_fn_kwargs: {}
+    temporal_weight_fns: ${python:loss.unit_weight_fn}
+    temporal_weight_fn_kwargs: {}
+  lr_schedule_fn: ${python:optax.schedules.warmup_cosine_decay_schedule}
+  lr_schedule_settings:
+    num_warmup_epochs: 5
+    init_value: 1e-6 # Initial learning rate
+    peak_value: 2e-3 # Peak learning rate
+    end_value: 1e-6 # Final learning rate
+  optimizer_fn: ${python:optax.adamw}
+  training_settings:
+    patience: 10
+    verbose_steps: True
+    verbose_epochs:
+
+model:
+  name: xe_loss_64
+  save_path: /cfs/home/jahj0154/StrongLensingNCDE/Results
+  model_class: ${python:models.PoolingONCDEClassifier}
+  hyperparams:
+    input_feature_size: 33
+    representation_size: 8
+    ncde_width: 128
+    ncde_depth: 1
+    ncde_solver: Tsit5     # you can still pass these as strings…
+    ncde_adjoint: ReversibleAdjoint
+    ncde_max_steps: ${eval:2**20}
+    classifier_width: 128
+    classifier_depth: 2
+    num_classes: 11
+    ncde_rtol: 1e-3
+    ncde_atol: 1e-3
