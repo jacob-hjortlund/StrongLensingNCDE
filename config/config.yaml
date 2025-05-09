@@ -21,6 +21,20 @@ training:
   loss_settings:
     loss_components:
       - temporal_cross_entropy_loss
+    loss_modifiers: null
+    loss_modifier_kwargs:
+      class_weights:
+        - 0.00129985
+        - 0.00101030
+        - 0.001
+        - 0.001
+        - 0.00120336
+        - 0.00100001
+        - 0.05047666
+        - 0.00137224
+        - 0.00243331
+        - 0.00175379
+        - 0.00157785
     loss_fn_kwargs: {}
     metric_fns:
       - temporal_predictions

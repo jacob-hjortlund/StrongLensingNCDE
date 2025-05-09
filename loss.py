@@ -15,11 +15,11 @@ def temporal_cross_entropy_loss(logits, label, scale=1.0, **kwargs):
 
     return loss
 
-def focalize_loss_fn(loss_fn: Callable, gamma: float) -> Callable:
+def focalize_loss_fn(loss_fn: Callable, gamma: float = 1.0, **kwargs) -> Callable:
 
-    def loss_fn(logits, label, scale=1.0, **kwargs):
+    def new_loss_fn(logits, label, scale=1.0, **kwargs):
 
-        probs = jax.nn.softmax(logits, ax=-1)
+        probs = jax.nn.softmax(logits, axis=-1)
         prob_true = probs[:, label]
         scaling_factor = (1 - prob_true)**gamma
         unscaled_loss = loss_fn(logits, label, scale, **kwargs)
@@ -27,13 +27,13 @@ def focalize_loss_fn(loss_fn: Callable, gamma: float) -> Callable:
 
         return loss
     
-    return loss_fn
+    return new_loss_fn
 
-def dual_focalize_loss_fn(loss_fn: Callable, gamma: float) -> Callable:
+def dual_focalize_loss_fn(loss_fn: Callable, gamma: float = 1.0, **kwargs) -> Callable:
 
-    def loss_fn(logits, label, scale=1.0, **kwargs):
+    def new_loss_fn(logits, label, scale=1.0, **kwargs):
 
-        probs = jax.nn.softmax(logits, ax=-1)[:, label]
+        probs = jax.nn.softmax(logits, axis=-1)
         masked_probs = probs.at[:, label].set(-1.0)
         
         p_true = probs[:, label]
@@ -45,19 +45,18 @@ def dual_focalize_loss_fn(loss_fn: Callable, gamma: float) -> Callable:
 
         return loss
     
-    return loss_fn
+    return new_loss_fn
 
+def class_weight_loss_fn(loss_fn: Callable, class_weights: ArrayLike, **kwargs) -> Callable:
 
-def class_weighted_loss_fn(loss_fn: Callable, class_weights: ArrayLike) -> Callable:
-
-    def loss_fn(logits, label, scale=1.0, **kwargs):
+    def new_loss_fn(logits, label, scale=1.0, **kwargs):
 
         class_weight = class_weights[label]
         loss = class_weight * loss_fn(logits, label, scale, **kwargs)
 
         return loss
     
-    return loss_fn
+    return new_loss_fn
 
 def temporal_hinge_loss(
     logits, label,
@@ -448,6 +447,8 @@ def make_batch_loss_fn(
 
 def make_function_list(components: list[Callable | str]):
 
+    if not isinstance(components, list):
+        components = [components,]
     new_list = []
     for component in components:
         if isinstance(component, str):
@@ -458,12 +459,33 @@ def make_function_list(components: list[Callable | str]):
     
     return new_list
 
+def compose_loss_components(
+    loss_components: list[Callable],
+    loss_modifiers: list[Callable],
+    loss_modifier_kwargs: dict,
+) -> list[Callable]:
+    """
+    For each loss component, apply each modifier in sequence (threading the output
+    of one into the next), and return the list of fully-wrapped loss functions.
+    """
+    wrapped_components = []
+    for comp in loss_components:
+        # start with the original component
+        fn = comp
+        # apply each modifier, passing in the same kwargs
+        for mod in loss_modifiers:
+            fn = mod(fn, **loss_modifier_kwargs)
+        wrapped_components.append(fn)
+    return wrapped_components
+
 def make_loss_and_metric_fn(
     loss_components: list[Callable | str],
     loss_fn_kwargs: dict,
     temporal_weight_fns: list[Callable | str],
     temporal_weight_fn_kwargs: dict,
     loss_scales: list[float] = None,
+    loss_modifiers: list[Callable | str] = None,
+    loss_modifier_kwargs: dict = {},
     metric_fns: list[Callable | str] = [temporal_predictions,],
     metric_fn_kwargs: dict = {},
 ):
@@ -474,15 +496,31 @@ def make_loss_and_metric_fn(
     if loss_scales is None:
         loss_scales = [1.0] * len(loss_components)
 
+    if loss_modifiers is None:
+        unity_loss_modifier = lambda fn, **kwargs: fn
+        loss_modifiers = [unity_loss_modifier, ] 
+
     if type(temporal_weight_fns) != list:
         temporal_weight_fns = [temporal_weight_fns] * len(loss_components)
 
     if type(metric_fns) != list:
         metric_fns = [metric_fns]
 
+    loss_modifier_kwargs = {
+        key: (jnp.array(value) if isinstance(value, list) else value)
+        for key, value in loss_modifier_kwargs.items()
+    }
+
     loss_components = make_function_list(loss_components)
+    loss_modifiers = make_function_list(loss_modifiers)
     temporal_weight_fns = make_function_list(temporal_weight_fns)
     metric_fns = make_function_list(metric_fns)
+
+    loss_components = compose_loss_components(
+        loss_components=loss_components,
+        loss_modifiers=loss_modifiers,
+        loss_modifier_kwargs=loss_modifier_kwargs
+    )
 
     batch_loss_fns = [
         make_batch_loss_fn(
