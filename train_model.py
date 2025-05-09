@@ -114,9 +114,12 @@ def train(cfg: DictConfig) -> None:
         optax,
         cfg['training']['optimizer_fn']
     )
-    optimizer = optax.inject_hyperparams(
-        optimizer_fn
-    )(lr_schedule)
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(0.1),
+        optax.inject_hyperparams(
+            optimizer_fn
+        )(lr_schedule)
+    )
 
     # ------------------------- Model Setup and Training ------------------------- #
 

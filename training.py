@@ -163,7 +163,7 @@ def inner_loop(
     for step in range(number_of_steps):
         
         if fixed_lr is None:
-            current_lr = optimizer_state.hyperparams['learning_rate']
+            current_lr = optimizer_state[1].hyperparams['learning_rate']
         else:
             current_lr = fixed_lr
             
@@ -255,6 +255,8 @@ def training_loop(
     optimizer_state = optimizer.init(
         eqx.filter(model, eqx.is_inexact_array)
     )
+
+    print(optimizer_state)
 
     train_step = make_train_step(optimizer, loss_fn)
     val_step = make_val_step(loss_fn)

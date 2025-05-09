@@ -1,3 +1,4 @@
+import jax
 import json
 import optax
 import models
@@ -8,11 +9,47 @@ import equinox as eqx
 import jax.random as jr
 
 from tqdm import trange
+from jaxtyping import Array
 from collections.abc import Callable
+
+def identity(x, *args, **kwargs):
+    
+    return x
+
+orthogonal_initializer = jax.nn.initializers.orthogonal()
+def orthogonal_init(weights: Array, key: jr.PRNGKey) -> Array:
+
+    shape = weights.shape
+    dtype = weights.dtype
+
+    new_weights = orthogonal_initializer(key, shape, dtype)
+
+    return new_weights
+
+def init_linear_weight(model, init_fn, key):
+  is_linear = lambda x: isinstance(x, eqx.nn.Linear)
+  get_weights = lambda m: [x.weight
+                           for x in jax.tree_util.tree_leaves(m, is_leaf=is_linear)
+                           if is_linear(x)]
+  weights = get_weights(model)
+  new_weights = [init_fn(weight, subkey)
+                 for weight, subkey in zip(weights, jax.random.split(key, len(weights)))]
+  new_model = eqx.tree_at(get_weights, model, new_weights)
+  return new_model
 
 def make_model(*, key, model_class, hyperparams):
     
-    return model_class(key=key, **hyperparams)
+    model_key, init_key = jr.split(key)
+    model = model_class(key=model_key, **hyperparams)
+
+    init_fn = globals()[
+        hyperparams.get(
+            'weight_init_fn', 'identity'
+        )
+    ]
+    custom_init_model = init_linear_weight(model, init_fn, init_key)
+
+    return custom_init_model
 
 def save_hyperparams(filename, hyperparams):
     with open(filename, "wb") as f:

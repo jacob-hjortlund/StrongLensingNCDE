@@ -70,7 +70,7 @@ class OnlineNCDE(eqx.Module):
         key,
         **kwargs
     ):
-        super().__init__(**kwargs)
+        super().__init__()
         ikey, fkey, lkey = jr.split(key, 3)
         self.initial = eqx.nn.MLP(data_size, hidden_size, width_size, depth, key=ikey)
         self.vector_field = VectorField(data_size, hidden_size, width_size, depth, key=fkey)
@@ -103,7 +103,8 @@ class OnlineNCDE(eqx.Module):
             ),
             saveat=saveat,
             adjoint=self.adjoint,
-            max_steps=self.max_steps
+            max_steps=self.max_steps,
+            progress_meter=diffrax.TqdmProgressMeter()
         )
 
         representations = solution.ys
@@ -140,7 +141,7 @@ class PoolingONCDEClassifier(eqx.Module):
         key,
         **kwargs
     ):
-        super().__init__(**kwargs)
+        super().__init__()
         ncde_key, classifier_key = jr.split(key, 2)
 
         is_reversible = False

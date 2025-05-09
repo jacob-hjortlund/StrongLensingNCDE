@@ -72,6 +72,7 @@ model:
     num_classes: 11
     ncde_rtol: 1e-3
     ncde_atol: 1e-3
+    weight_init_fn: identity
 
 range_finding:
   num_steps: 200
