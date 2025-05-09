@@ -26,6 +26,8 @@ def train(cfg: DictConfig) -> None:
     print(f"\nWorking directory : {os.getcwd()}")
     print(f"Hydra Output directory  : {hydra.core.hydra_config.HydraConfig.get().runtime.output_dir}\n")
 
+    cfg = OmegaConf.to_container(cfg, resolve=True)
+
     rng_key = jr.PRNGKey(cfg['seed'])
 
     data_path = Path(cfg['training']['path'])
@@ -66,6 +68,19 @@ def train(cfg: DictConfig) -> None:
         **cfg['training']['data_settings']
     )
 
+    class_counts = train_dataset.class_counts_array
+    beta = 0.999
+    weights = (1-beta) / (1-beta**class_counts)
+    
+    print("Class counts:")
+    print(class_counts)
+    print(" ")
+
+    print("Weights:")
+    for count, weight in zip(class_counts, weights):
+        print(f"{count}: {weight:.8f}")
+    
+
     steps_per_epoch = cfg['training']['data_settings']['steps_per_epoch']
     num_full_passes = cfg['training']['data_settings']['num_full_passes']
     num_batches_in_dataset = len(train_dataloader)
@@ -75,7 +90,8 @@ def train(cfg: DictConfig) -> None:
     # ---------------------------- Loss Function Setup --------------------------- #
 
     loss_fn = loss.make_loss_and_metric_fn(
-        **OmegaConf.to_container(cfg['training']['loss_settings'])
+        #**OmegaConf.to_container(cfg['training']['loss_settings'])
+        **cfg['training']['loss_settings']
     )
 
     # ------------------------------ Optimizer Setup ----------------------------- #
@@ -113,7 +129,7 @@ def train(cfg: DictConfig) -> None:
         model_class=model_class,
         hyperparams=cfg['model']['hyperparams']
     )
-    utils.save_hyperparams(save_path / "hyperparams.eqx", OmegaConf.to_container(cfg['model']['hyperparams']))
+    utils.save_hyperparams(save_path / "hyperparams.eqx", cfg['model']['hyperparams'])
 
     if isinstance(
         cfg['training']['loss_settings']['loss_components'], str
