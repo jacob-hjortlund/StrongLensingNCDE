@@ -39,9 +39,9 @@ training:
     metric_fns:
       - temporal_predictions
     metric_fn_kwargs: {}
-    temporal_weight_fns: 
-      - unit_weight_fn
-    temporal_weight_fn_kwargs: {}
+    temporal_weight_fns: unit_weight_fn
+    temporal_weight_fn_kwargs:
+      gamma: 0.5
   lr_schedule_fn: warmup_cosine_decay_schedule
   num_warmup_epochs: 5
   lr_schedule_settings:

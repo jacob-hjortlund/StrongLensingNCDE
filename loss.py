@@ -327,8 +327,27 @@ def batch_number_of_transitions(logits, lengths, trigger_idx, valid_lightcurve_m
 
     return jnp.nanmedian(masked_num_transitions)
 
-def unit_weight_fn(times, t_peak, **kwargs):
+def unit_weight_fn(times, t_peak, logits, label, **kwargs):
     return jnp.ones_like(times)
+
+def focal_weight_fn(times, t_peak, logits, label, gamma=1.0, **kwargs):
+
+    probs = jax.nn.softmax(logits, axis=-1)
+    p_true = probs[:, label]
+    focal_weight = (1 - p_true)**gamma
+
+    return focal_weight
+
+def dual_focal_weight_fn(times, t_peak, logits, label, gamma=1.0, **kwargs):
+
+    probs = jax.nn.softmax(logits, axis=-1)
+    masked_probs = probs.at[:, label].set(-1.0)
+    
+    p_true = probs[:, label]
+    p_next = jnp.max(masked_probs, axis=-1)
+    focal_weight = (1 - p_true + p_next)**gamma
+
+    return focal_weight
 
 def make_masked_timeseries_loss_fn(
     loss_fn: callable,
@@ -369,7 +388,7 @@ def make_masked_timeseries_loss_fn(
         """
 
         _loss = loss_fn(logits, label, **loss_fn_kwargs)
-        _weights = temporal_weight_fn(times, t_peak, **temporal_weight_kwargs)
+        _weights = temporal_weight_fn(times, t_peak, logits, label, **temporal_weight_kwargs)
 
         indeces = jnp.arange(_loss.shape[-1])
         length_mask = indeces < length
