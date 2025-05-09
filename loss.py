@@ -4,23 +4,60 @@ import diffrax
 import equinox as eqx
 import jax.numpy as jnp
 
+from jaxtyping import ArrayLike
 from collections.abc import Callable
 
 def temporal_cross_entropy_loss(logits, label, scale=1.0, **kwargs):
 
     log_probs = jax.nn.log_softmax(logits, axis=-1)
-    loss = -scale * log_probs[:, label]
+    log_prob_true = log_probs[:, label]
+    loss = -scale * log_prob_true
 
     return loss
 
-def balanced_temporal_cross_entropy_loss(logits, label, label_counts, scales, **kwargs):
+def focalize_loss_fn(loss_fn: Callable, gamma: float) -> Callable:
 
-    log_bias = jnp.log(label_counts)
-    biased_logits = logits + log_bias
-    scale = scales[label]
-    loss = temporal_cross_entropy_loss(biased_logits, label, scale, **kwargs)
+    def loss_fn(logits, label, scale=1.0, **kwargs):
 
-    return loss
+        probs = jax.nn.softmax(logits, ax=-1)
+        prob_true = probs[:, label]
+        scaling_factor = (1 - prob_true)**gamma
+        unscaled_loss = loss_fn(logits, label, scale, **kwargs)
+        loss = scaling_factor * unscaled_loss
+
+        return loss
+    
+    return loss_fn
+
+def dual_focalize_loss_fn(loss_fn: Callable, gamma: float) -> Callable:
+
+    def loss_fn(logits, label, scale=1.0, **kwargs):
+
+        probs = jax.nn.softmax(logits, ax=-1)[:, label]
+        masked_probs = probs.at[:, label].set(-1.0)
+        
+        p_true = probs[:, label]
+        p_next = jnp.max(masked_probs, axis=-1)
+        scaling_factor = (1 - p_true + p_next)**gamma
+        
+        unscaled_loss = loss_fn(logits, label, scale, **kwargs)
+        loss = scaling_factor * unscaled_loss
+
+        return loss
+    
+    return loss_fn
+
+
+def class_weighted_loss_fn(loss_fn: Callable, class_weights: ArrayLike) -> Callable:
+
+    def loss_fn(logits, label, scale=1.0, **kwargs):
+
+        class_weight = class_weights[label]
+        loss = class_weight * loss_fn(logits, label, scale, **kwargs)
+
+        return loss
+    
+    return loss_fn
 
 def temporal_hinge_loss(
     logits, label,
