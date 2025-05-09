@@ -193,7 +193,7 @@ def inner_loop(
             ts_accuracy = step_metrics[5]
 
             step_string = (
-                f"Step: {step} | Loss: {loss:.2f} | " +
+                f"Step: {step} | Loss: {loss:.2e} | " +
                 f"Stable Acc.: {stable_accuracy*100:.2f}% | " +
                 f"T_0: {earliest_time:.2f} | " +
                 f"Stable T_0: {stable_earliest_time:.2f} | " +
@@ -339,7 +339,7 @@ def training_loop(
 
             train_string = (
                 f"Train - " +
-                f"Loss: {avg_train_loss:.2f} | " +
+                f"Loss: {avg_train_loss:.2e} | " +
                 f"Stable Acc.: {train_stable_accuracy*100:.2f}% | " +
                 f"T_0: {train_earliest_time:.2f} | " +
                 f"Stable T_0: {train_stable_earliest_time:.2f} | " +
@@ -362,7 +362,7 @@ def training_loop(
 
             val_string = (
                 f"Val   - " +
-                f"Loss: {avg_val_loss:.2f} | " +
+                f"Loss: {avg_val_loss:.2e} | " +
                 f"Stable Acc.: {val_stable_accuracy*100:.2f}% | " +
                 f"T_0: {val_earliest_time:.2f} | " +
                 f"Stable T_0: {val_stable_earliest_time:.2f} | " +
@@ -423,7 +423,7 @@ def training_loop(
 
     best_train_string = (
         f"\nTrain - " +
-        f"Loss: {avg_train_loss:.2f} | " +
+        f"Loss: {avg_train_loss:.2e} | " +
         f"Stable Acc.: {train_stable_accuracy*100:.2f}% | " +
         f"T_0: {train_earliest_time:.2f} | " +
         f"Stable T_0: {train_stable_earliest_time:.2f} | " +
@@ -441,7 +441,7 @@ def training_loop(
 
     best_val_string = (
         f"Val   - " +
-        f"Loss: {avg_val_loss:.2f} | " +
+        f"Loss: {avg_val_loss:.2e} | " +
         f"Stable Acc.: {val_stable_accuracy*100:.2f}% | " +
         f"T_0: {val_earliest_time:.2f} | " +
         f"Stable T_0: {val_stable_earliest_time:.2f} | " +

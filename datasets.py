@@ -149,6 +149,18 @@ class HDF5TimeSeriesDataset(Dataset):
             total_no_none = sum(
                 count for label, count in self.class_counts.items() if label != 'None'
             )
+            self.class_counts_dict = {
+                label: count
+                for label, count in self.class_counts.items()
+                if label != 'None'
+            }
+            self.class_counts_array = np.array(
+                [
+                    self.class_counts_dict[
+                        self.idx_to_label[i]
+                    ] for i in range(n_labels)
+                ]
+            )
             self.class_frequencies_dict = {
                 label: count / total_no_none
                 for label, count in self.class_counts.items()
