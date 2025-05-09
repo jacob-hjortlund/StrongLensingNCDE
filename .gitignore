@@ -1,0 +1,8 @@
+__pycache__/
+outputs/
+logs/
+Results/
+results/
+*.sh
+.ipynb_checkpoints/
+.ipynb_checkpoints
