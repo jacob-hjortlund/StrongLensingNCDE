@@ -80,9 +80,10 @@ def lr_range_test(
     lr_min=1e-7,
     lr_max=1.0,
     repeats=1,
-    optimizer=optax.adamw
+    optimizer="adamw"
 ):
 
+    optimizer = getattr(optax, optimizer)
     train_loader = infinite_dataloader(train_loader)
 
     all_lrs = np.zeros((repeats, num_steps))
