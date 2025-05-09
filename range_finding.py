@@ -118,7 +118,7 @@ def train(cfg: DictConfig) -> None:
     ax[0].set_xlabel("Learning rate")
     ax[1].set_xlabel("Learning rate")
     ax[0].set_ylabel("Training loss")
-    fig.set_title("LR range test")
+    fig.suptitle("LR range test")
     fig.tight_layout()
 
     fig.savefig(save_path / 'lr_range_test.pdf')
