@@ -285,7 +285,7 @@ def training_loop(
     val_epoch_losses = np.zeros((number_of_epochs, num_loss_components))
     val_epoch_metrics = np.zeros((number_of_epochs, 6))
 
-    best_val_loss = np.inf
+    best_val_loss = -np.inf
     best_val_epoch = 0
     wait = 0
 
