@@ -68,18 +68,6 @@ def train(cfg: DictConfig) -> None:
         **cfg['training']['data_settings']
     )
 
-    class_counts = train_dataset.class_counts_array
-    beta = 0.999
-    weights = (1-beta) / (1-beta**class_counts)
-    
-    print("Class counts:")
-    print(class_counts)
-    print(" ")
-
-    print("Weights:")
-    for count, weight in zip(class_counts, weights):
-        print(f"{count}: {weight:.8f}")
-    
 
     steps_per_epoch = cfg['training']['data_settings']['steps_per_epoch']
     num_full_passes = cfg['training']['data_settings']['num_full_passes']
@@ -90,7 +78,6 @@ def train(cfg: DictConfig) -> None:
     # ---------------------------- Loss Function Setup --------------------------- #
 
     loss_fn = loss.make_loss_and_metric_fn(
-        #**OmegaConf.to_container(cfg['training']['loss_settings'])
         **cfg['training']['loss_settings']
     )
 
