@@ -104,7 +104,6 @@ class OnlineNCDE(eqx.Module):
             saveat=saveat,
             adjoint=self.adjoint,
             max_steps=self.max_steps,
-            progress_meter=diffrax.TqdmProgressMeter()
         )
 
         representations = solution.ys
