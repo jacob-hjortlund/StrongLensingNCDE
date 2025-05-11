@@ -169,6 +169,7 @@ def inner_loop(
             
         data = next(dataloader)
         data = [output.numpy() for output in data]
+        
         t_step_init = time.time()
         loss, aux, model, optimizer_state = step_fn(
             model, data, optimizer_state
@@ -255,9 +256,7 @@ def training_loop(
     optimizer_state = optimizer.init(
         eqx.filter(model, eqx.is_inexact_array)
     )
-
-    print(optimizer_state)
-
+    
     train_step = make_train_step(optimizer, loss_fn)
     val_step = make_val_step(loss_fn)
 
@@ -307,7 +306,7 @@ def training_loop(
             optimizer_state=optimizer_state,
             step_fn=train_step,
             number_of_steps=steps_per_epoch,
-            verbose=verbose_steps
+            verbose=verbose_steps,
         )
         last_train_lr = train_aux[4][-1]
 
@@ -322,7 +321,7 @@ def training_loop(
             fixed_lr=last_train_lr,
             step_fn=val_step,
             number_of_steps=steps_per_epoch,
-            verbose=verbose_steps
+            verbose=verbose_steps,
         )
 
         epoch_duration = time.time() - t_epoch_init
