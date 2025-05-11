@@ -6,6 +6,7 @@ import jax.numpy as jnp
 
 from jaxtyping import ArrayLike
 from collections.abc import Callable
+from jax.scipy.special import logsumexp
 
 def temporal_cross_entropy_loss(logits, label, scale=1.0, **kwargs):
 
@@ -330,11 +331,24 @@ def batch_number_of_transitions(logits, lengths, trigger_idx, valid_lightcurve_m
 def unit_weight_fn(times, t_peak, logits, label, **kwargs):
     return jnp.ones_like(times)
 
-def focal_weight_fn(times, t_peak, logits, label, gamma=1.0, **kwargs):
+def _stable_focal_weight(p, gamma=1.0, eps=1e-20):
+
+    log_one_minus_p = jnp.log1p(-p)
+    log_w = gamma * log_one_minus_p
+    log_S = logsumexp(log_w)
+    focal_weight = jnp.clip(
+        jnp.exp(log_w - log_S),
+        min=eps,
+        max=1.0-eps
+    )
+
+    return focal_weight
+
+def focal_weight_fn(times, t_peak, logits, label, gamma=1.0, eps=1e-20, **kwargs):
 
     probs = jax.nn.softmax(logits, axis=-1)
-    p_true = probs[:, label]
-    focal_weight = (1 - p_true)**gamma
+    p_true = jnp.clip(probs[:, label], min=eps, max=1.0-eps)
+    focal_weight = _stable_focal_weight(p_true, gamma, eps)
 
     return focal_weight
 
@@ -345,7 +359,8 @@ def dual_focal_weight_fn(times, t_peak, logits, label, gamma=1.0, **kwargs):
     
     p_true = probs[:, label]
     p_next = jnp.max(masked_probs, axis=-1)
-    focal_weight = (1 - p_true + p_next)**gamma
+    p_diff = jnp.clip(p_true - p_next, min=0., max=1.0)
+    focal_weight = _stable_focal_weight(p_diff, gamma)
 
     return focal_weight
 
