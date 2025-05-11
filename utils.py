@@ -6,11 +6,126 @@ import training
 
 import numpy as np
 import equinox as eqx
+import jax.numpy as jnp
 import jax.random as jr
 
+from typing import Any
 from tqdm import trange
 from jaxtyping import Array
 from collections.abc import Callable
+
+def inspect_gradients(
+    model: eqx.Module,
+    loss_fn: Callable[[eqx.Module, Any], Array],
+    data: Any
+) -> None:
+    """
+    Inspects and prints gradient statistics for each parameter of an Equinox model.
+
+    Parameters:
+    ----------
+    model : eqx.Module
+        The Equinox model whose gradients you want to inspect.
+    loss_fn : Callable
+        Loss function taking (model, data) and returning a scalar loss.
+    data : Any
+        Data passed to the loss function (e.g., batch input/target).
+
+    Prints:
+    ------
+    For each parameter, prints:
+        - Parameter name
+        - Gradient mean
+        - Gradient std deviation
+        - Gradient norm
+        - Presence of NaNs or infinite values
+    """
+    @eqx.filter_jit
+    def func(model, data):
+        (
+            times, flux, partial_ts, trigger_idx,
+            lengths, peak_times, max_times, 
+            binary_labels, multiclass_labels,
+            valid_lightcurve_mask
+        ) = data
+
+        s, interp_s, interp_ts = training.batch_mapped_interpolate_timeseries(
+            times, flux, partial_ts
+        )
+        s = s[:,0,:]
+        
+        max_s = max_times + (lengths-1) / 1000
+
+        grad_fn = eqx.filter_value_and_grad(loss_fn, has_aux=True)
+        (loss, aux), grads = grad_fn(
+            model,
+            times,
+            s, 
+            max_s,
+            interp_s,
+            interp_ts,
+            trigger_idx,
+            lengths,
+            multiclass_labels,
+            peak_times,
+            valid_lightcurve_mask
+        )
+
+        return (loss, aux), grads
+    
+    (
+        times, flux, partial_ts, trigger_idx,
+        lengths, peak_times, max_times, 
+        binary_labels, multiclass_labels,
+        valid_lightcurve_mask
+    ) = data
+
+    s, interp_s, interp_ts = training.batch_mapped_interpolate_timeseries(
+        times, flux, partial_ts
+    )
+    s = s[:,0,:]
+    
+    max_s = max_times + (lengths-1) / 1000
+    _, _ = loss_fn(
+        model,
+        times,
+        s, 
+        max_s,
+        interp_s,
+        interp_ts,
+        trigger_idx,
+        lengths,
+        multiclass_labels,
+        peak_times,
+        valid_lightcurve_mask
+    )
+    (loss, aux), grads = func(model, data)
+
+    flat_grads, grad_tree = jax.tree_util.tree_flatten(grads)
+    flat_names = eqx.tree_pformat(grads).splitlines()
+
+    print(" ")
+    global_norm = optax.global_norm(grads)
+    print(f"Global Gradient Norm: {global_norm:.3e}\n")
+    print("Gradient inspection:")
+    for grad, name in zip(flat_grads, flat_names):
+        if grad is not None:
+            grad_mean = jnp.mean(grad)
+            grad_std = jnp.std(grad)
+            grad_norm = jnp.linalg.norm(grad)
+            grad_has_nan = jnp.isnan(grad).any()
+            grad_has_inf = jnp.isinf(grad).any()
+
+            print(f"\n{name.strip()}:")
+            print(f"    Mean       : {grad_mean:.3e}")
+            print(f"    Std        : {grad_std:.3e}")
+            print(f"    Norm       : {grad_norm:.3e}")
+            print(f"    Contains NaN: {bool(grad_has_nan)}")
+            print(f"    Contains Inf: {bool(grad_has_inf)}")
+        else:
+            print(f"\n{name.strip()}: No gradient (None)")
+    
+    print(" ")
 
 def identity(x, *args, **kwargs):
     
