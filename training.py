@@ -286,7 +286,7 @@ def training_loop(
     val_epoch_losses = np.zeros((number_of_epochs, num_loss_components))
     val_epoch_metrics = np.zeros((number_of_epochs, 6))
 
-    best_val_loss = -np.inf
+    best_val_loss = np.inf
     best_val_epoch = 0
     wait = 0
 
@@ -385,7 +385,7 @@ def training_loop(
         val_epoch_losses[epoch-1] = val_aux[0]
         val_epoch_metrics[epoch-1] = avg_val_metrics
 
-        if avg_val_loss > best_val_loss:
+        if avg_val_loss < best_val_loss:
             
             if save_path:
                 utils.save_model(save_path / "best_model.eqx", model)
