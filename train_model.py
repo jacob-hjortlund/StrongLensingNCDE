@@ -26,11 +26,11 @@ def train(cfg: DictConfig) -> None:
     print(f"\nWorking directory : {os.getcwd()}")
     print(f"Hydra Output directory  : {hydra.core.hydra_config.HydraConfig.get().runtime.output_dir}\n")
 
-    cfg = OmegaConf.to_container(cfg, resolve=True)
-
     print("\n")
     print(cfg)
     print("\n")
+    
+    cfg = OmegaConf.to_container(cfg, resolve=True)
     
     rng_key = jr.PRNGKey(cfg['seed'])
 
