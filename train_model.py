@@ -28,6 +28,10 @@ def train(cfg: DictConfig) -> None:
 
     cfg = OmegaConf.to_container(cfg, resolve=True)
 
+    print("\n")
+    print(cfg)
+    print("\n")
+    
     rng_key = jr.PRNGKey(cfg['seed'])
 
     data_path = Path(cfg['training']['path'])
