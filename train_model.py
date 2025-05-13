@@ -73,11 +73,20 @@ def train(cfg: DictConfig) -> None:
     )
 
 
+    n_classes = len(train_dataset.class_counts_array)
+    cfg['model']['hyperparams']['num_classes'] = n_classes
     steps_per_epoch = cfg['training']['data_settings']['steps_per_epoch']
     num_full_passes = cfg['training']['data_settings']['num_full_passes']
     num_batches_in_dataset = len(train_dataloader)
     epochs_in_full_pass = int(np.ceil(num_batches_in_dataset / steps_per_epoch))
     num_epochs = num_full_passes * epochs_in_full_pass
+
+    if cfg['training']['data_settings']['verbose']:
+        print(f"\nBatches / Epoch: {steps_per_epoch}")
+        print(f"Num. Full Passes: {num_full_passes}")
+        print(f"Num. Batches in Train Dataset: {num_batches_in_dataset}")
+        print(f"Epochs In One Full Pass: {epochs_in_full_pass}")
+        print(f"Num. Epochs For {num_full_passes} Full Passes: {num_epochs}\n")
 
     # ---------------------------- Loss Function Setup --------------------------- #
 
