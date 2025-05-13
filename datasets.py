@@ -68,6 +68,8 @@ class HDF5TimeSeriesDataset(Dataset):
         sample_redshift: bool = False,
         sample_redshift_probs: np.ndarray = None,
         seed: int = 42,
+        classes: list[str] = None,
+        verbose: bool = True,
         **kwargs
     ):
         
@@ -108,31 +110,41 @@ class HDF5TimeSeriesDataset(Dataset):
         self.sample_redshift_probs = sample_redshift_probs
         self.rng = np.random.default_rng(seed=seed)
         
-
+        label_subset = set(classes) if classes else set()
+        class_labels = set()
+        class_label_counter = Counter()
         with h5py.File(self.h5_file_path, 'r') as f:
+
             # 1) collect all keys…
             all_keys = sorted(f.keys())
-            # 2) filter out any sample with only one (or zero) epoch
-            self.sample_keys = [
-                k for k in all_keys
-                if len(f[k]['TRANS_MJD']) > 1
-            ]
-            if len(self.sample_keys) < len(all_keys):
-                print(f"Dropped {len(all_keys)-len(self.sample_keys)} samples with len(TRANS_MJD)<=1")
 
-            class_labels = set()
-            class_label_counter = Counter()
-            for sample_key in self.sample_keys:
+            n_obs_filtered_count = 0
+            class_filtering_count = 0
+            self.sample_keys = []
+            for sample_key in all_keys:
+
+                n_obs = len(f[sample_key]['TRANS_MJD'])
+                if n_obs < 2:
+                    n_obs_filtered_count += 1
+                    continue
+
                 multiclass_labels = f[sample_key].attrs['MULTICLASS_LABEL']
                 multiclass_labels = np.char.decode(multiclass_labels)
+                multiclass_label_set = set(multiclass_labels)
+                no_intersection = len(label_subset & multiclass_label_set) < 1
 
-                class_labels.update(set(multiclass_labels))
-                class_label_counter.update(multiclass_labels.tolist())
+                if no_intersection and classes:
+                    class_filtering_count += 1
+                    continue
+                else:
+                    self.sample_keys.append(sample_key)
+                    class_labels.update(set(multiclass_labels))
+                    class_label_counter.update(multiclass_labels.tolist())
 
-                # Determine max length for padding
-                t_mjd = f[sample_key]['TRANS_MJD']
-                if len(t_mjd) > self.max_length:
-                    self.max_length = len(t_mjd)
+                    # Determine max length for padding
+                    t_mjd = f[sample_key]['TRANS_MJD']
+                    if len(t_mjd) > self.max_length:
+                        self.max_length = len(t_mjd)
 
             class_labels.remove('None')
             n_labels = len(class_labels)
@@ -174,6 +186,26 @@ class HDF5TimeSeriesDataset(Dataset):
                     ] for i in range(n_labels)
                 ]
             )
+
+            unfiltered_size = len(all_keys)
+            filtered_size = len(self.sample_keys)
+            has_been_filtered = filtered_size < unfiltered_size
+            if verbose:
+                if has_been_filtered:
+                    print(f"\nDropped {n_obs_filtered_count} samples with len(TRANS_MJD)<=1")
+                    if classes:
+                        print(f"Droppped {class_filtering_count} samples due to user-provided class filtering")
+                    size_ratio = filtered_size / unfiltered_size
+                    print(f"Current dataset length is {filtered_size}, or {size_ratio*100:.2f}% of original dataset.\n")
+                
+                print("\nClass Counts / Frequencies:")
+                for label in self.class_counts_dict.keys():
+                    label_count = self.class_counts_dict[label]
+                    label_freq = self.class_frequencies_dict[label]
+                    print(f"{label}: {label_count} / {label_freq*100:.2f}%")
+
+                print(f"\nMaximum No. of Observations: {self.max_length}")
+                print("\n")
 
     def __len__(self):
         return len(self.sample_keys)

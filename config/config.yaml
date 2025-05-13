@@ -18,6 +18,8 @@ training:
     sample_redshift: True
     sample_redshift_probs: [1.0, 0.0, 0.0]
     max_obs: False
+    classes: null
+    verbose: True
   loss_settings:
     loss_components:
       - temporal_cross_entropy_loss
