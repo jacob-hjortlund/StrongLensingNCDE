@@ -346,11 +346,6 @@ def pad_last(ts_list, lengths, max_length):
 
     return padded
 
-# Ensure time dimension is strictly monotonically increasing
-#delta = 1e-6
-#padding_increase = torch.cumsum(mask, axis=-1) * delta
-#last_rows_expanded[:, :, 0][mask] = _last_rows_expanded[:, :, 0][mask] + padding_increase[mask]
-
 
 def collate_fn(batch, max_length=None, nmax=None):
     
