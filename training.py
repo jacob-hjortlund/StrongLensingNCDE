@@ -240,15 +240,17 @@ def training_loop(
     optimizer,
     train_dataloader,
     val_dataloader,
-    meta_dataloader=None,
     number_of_epochs: int = 1,
+    number_of_warmup_epochs: int = 1,
     steps_per_epoch: int = 10,
     verbose_steps: bool = False,
     verbose_epochs: bool = True,
     save_path: str = None,
     patience: int = 10,
+    val_steps_per_epoch: int = None,
 ):
     
+    total_number_of_epochs = number_of_epochs + number_of_warmup_epochs
     if save_path:
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
@@ -267,31 +269,35 @@ def training_loop(
 
     if verbose_epochs:
         num_batches_in_dataset = len(train_dataloader)
-        num_full_passes = number_of_epochs * steps_per_epoch / num_batches_in_dataset
+        num_full_passes = total_number_of_epochs * steps_per_epoch / num_batches_in_dataset
         init_str = (
             f"\nNum. Full Passes: {num_full_passes:.2f} | "+
-            f"Num. Epochs: {number_of_epochs} | " +
+            f"Num. Warmup Epochs: {number_of_warmup_epochs} | " +
+            f"Num. Train Epochs: {number_of_epochs} | " +
             f"Batches per Epoch: {steps_per_epoch}\n"
         )
         print(init_str)
 
+    if steps_per_epoch is None:
+        steps_per_epoch = len(train_dataloader)
+    if val_steps_per_epoch is None:
+        val_steps_per_epoch = len(val_dataloader) 
+
     train_dataloader = infinite_dataloader(train_dataloader)
     val_dataloader = infinite_dataloader(val_dataloader)
-    if meta_dataloader:
-        meta_dataloader = infinite_dataloader(meta_dataloader)
 
-    training_epoch_losses = np.zeros((number_of_epochs, num_loss_components))
-    training_epoch_metrics = np.zeros((number_of_epochs, 6))
+    training_epoch_losses = np.zeros((total_number_of_epochs, num_loss_components))
+    training_epoch_metrics = np.zeros((total_number_of_epochs, 6))
 
-    val_epoch_losses = np.zeros((number_of_epochs, num_loss_components))
-    val_epoch_metrics = np.zeros((number_of_epochs, 6))
+    val_epoch_losses = np.zeros((total_number_of_epochs, num_loss_components))
+    val_epoch_metrics = np.zeros((total_number_of_epochs, 6))
 
     best_val_loss = np.inf
     best_val_epoch = 0
     wait = 0
 
     t_training_init = time.time()
-    for epoch in range(1, number_of_epochs+1):
+    for epoch in range(1, total_number_of_epochs+1):
         
         if verbose_steps:
             print("Training")
@@ -320,7 +326,7 @@ def training_loop(
             optimizer_state=None,
             fixed_lr=last_train_lr,
             step_fn=val_step,
-            number_of_steps=steps_per_epoch,
+            number_of_steps=val_steps_per_epoch,
             verbose=verbose_steps,
         )
 
@@ -413,7 +419,7 @@ def training_loop(
         np.save(save_path / "val_metrics.npy", val_epoch_metrics)
 
     training_duration = time.time() - t_training_init
-    avg_epoch_duration = training_duration / number_of_epochs
+    avg_epoch_duration = training_duration / total_number_of_epochs
 
     train_stable_accuracy = training_epoch_metrics[best_val_epoch, 0]
     train_earliest_time = training_epoch_metrics[best_val_epoch, 1]

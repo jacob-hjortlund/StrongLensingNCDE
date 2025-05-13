@@ -78,8 +78,8 @@ def train(cfg: DictConfig) -> None:
     steps_per_epoch = cfg['training']['data_settings']['steps_per_epoch']
     num_full_passes = cfg['training']['data_settings']['num_full_passes']
     num_batches_in_dataset = len(train_dataloader)
-    epochs_in_full_pass = int(np.ceil(num_batches_in_dataset / steps_per_epoch))
-    num_epochs = num_full_passes * epochs_in_full_pass
+    epochs_in_full_pass = num_batches_in_dataset / steps_per_epoch
+    num_epochs = int(np.ceil(num_full_passes * epochs_in_full_pass))
 
     if cfg['training']['data_settings']['verbose']:
         print(f"\nBatches / Epoch: {steps_per_epoch}")
@@ -150,10 +150,11 @@ def train(cfg: DictConfig) -> None:
         optimizer=optimizer,
         train_dataloader=train_dataloader,
         val_dataloader=val_dataloader,
-        number_of_epochs=num_epochs+num_warmup_epochs,
+        number_of_epochs=num_epochs,
+        number_of_warmup_epochs=num_warmup_epochs,
         steps_per_epoch=steps_per_epoch,
-        verbose_steps=True,
         save_path=save_path,
+        **cfg['training']['training_settings']
     )
 
 if __name__ == "__main__":

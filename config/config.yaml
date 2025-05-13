@@ -44,7 +44,7 @@ training:
     temporal_weight_fns: unit_weight_fn
     temporal_weight_fn_kwargs:
       gamma: 0.5
-      eps: 1e-20
+      eps: 1e-8
   lr_schedule_fn: warmup_cosine_decay_schedule
   num_warmup_epochs: 5
   lr_schedule_settings:
@@ -55,7 +55,8 @@ training:
   training_settings:
     patience: 10
     verbose_steps: True
-    verbose_epochs:
+    verbose_epochs: True
+    val_steps_per_epoch: ${training.data_settings.steps_per_epoch}
 
 model:
   name: specz_xe_loss_64
