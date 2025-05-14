@@ -7,5 +7,4 @@ results/
 .ipynb_checkpoints/
 .ipynb_checkpoints
 *.ipynb
-__init__.py
 *.egg*
