@@ -610,7 +610,6 @@ def make_loss_and_metric_fn(
         labels: jnp.ndarray,
         peak_times: jnp.ndarray,
         valid_lightcurve_mask: jnp.ndarray,
-        step: jnp.ndarray,
     ):
         
         logits = jax.vmap(
