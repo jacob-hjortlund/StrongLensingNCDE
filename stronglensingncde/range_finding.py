@@ -2,17 +2,17 @@ import os
 import jax
 jax.config.update("jax_enable_x64", True)
 
-import loss
-import hydra
-import utils
-import models
-import datasets
 
+import hydra
 
 import numpy as np
 import seaborn as sns
 import jax.random as jr
 import matplotlib.pyplot as plt
+import stronglensingncde.loss as loss
+import stronglensingncde.utils as utils
+import stronglensingncde.models as models
+import stronglensingncde.datasets as datasets
 
 from pathlib import Path
 from omegaconf import DictConfig, OmegaConf

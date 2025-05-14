@@ -1,13 +1,13 @@
 import jax
 import json
 import optax
-import models
-import training
 
 import numpy as np
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
+import stronglensingncde.models as models
+import stronglensingncde.training as training
 
 from typing import Any
 from tqdm import trange

@@ -1,8 +1,7 @@
 import h5py
 import numpy as np
-import pandas as pd
 import astropy.units as u
-import preprocessing as prep
+import stronglensingncde.preprocessing as prep
 
 from tqdm import tqdm
 from pathlib import Path

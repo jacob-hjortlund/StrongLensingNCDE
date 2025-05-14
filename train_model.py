@@ -2,25 +2,24 @@ import os
 import jax
 jax.config.update("jax_enable_x64", True)
 
-import loss
-import utils
-import optax
-import models
-import datasets
 
-import training
+import optax
+import hydra
 
 import numpy as np
 import jax.numpy as jnp
 import jax.random as jr
-
-import hydra
+import stronglensingncde.loss as loss
+import stronglensingncde.utils as utils
+import stronglensingncde.models as models
+import stronglensingncde.datasets as datasets
+import stronglensingncde.training as training
 
 from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
 
-@hydra.main(version_base=None, config_path="./config", config_name="config")
+@hydra.main(version_base=None, config_path="./stronglensingncde/config", config_name="config")
 def train(cfg: DictConfig) -> None:
 
     print(f"\nWorking directory : {os.getcwd()}")

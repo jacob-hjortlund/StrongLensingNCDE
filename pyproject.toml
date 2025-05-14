@@ -1,0 +1,20 @@
+[build-system]
+requires = [
+  "setuptools>=61.0",
+  "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stronglensingncde"
+version = "0.1.0"
+description = "Strongly-lensed transient detection models & training utilities"
+readme = "README.md"
+authors = [
+  { name = "Jacob Osman Hjortlund", email = "jacob.hjortlund@fysik.su.se" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.12"
+dependencies = [
+  # TBD
+]

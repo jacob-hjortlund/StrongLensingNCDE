@@ -60,7 +60,7 @@ training:
 
 model:
   name: specz_xe_loss_64
-  save_dir: /cfs/home/jahj0154/StrongLensingNCDE/Results
+  save_dir: /cfs/home/jahj0154/StrongLensingNCDE_Results
   save_path: "${model.save_dir}/${model.name}"
   class: PoolingONCDEClassifier
   hyperparams:

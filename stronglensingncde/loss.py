@@ -1,5 +1,4 @@
 import jax
-import diffrax
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -346,6 +345,7 @@ def _stable_focal_weight(p, gamma=1.0, eps=1e-20):
 
 def focal_weight_fn(times, t_peak, logits, label, gamma=1.0, eps=1e-20, **kwargs):
 
+    
     probs = jax.nn.softmax(logits, axis=-1)
     p_true = jnp.clip(probs[:, label], min=eps, max=1.0-eps)
     focal_weight = _stable_focal_weight(p_true, gamma, eps)
@@ -363,6 +363,29 @@ def dual_focal_weight_fn(times, t_peak, logits, label, gamma=1.0, **kwargs):
     focal_weight = _stable_focal_weight(p_diff, gamma)
 
     return focal_weight
+
+def weight_warmup_wrapper(weight_fn, num_warmup):
+
+    _unit_weight_fn = lambda operand: unit_weight_fn(
+        operand[0], operand[1], operand[2],
+        operand[3], **operand[4]
+    )
+
+    _weight_fn = lambda operand: weight_fn(
+        operand[0], operand[1], operand[2],
+        operand[3], **operand[4]
+    )
+
+    def weight_fn(step, operands):
+
+        weights = jax.lax.cond(
+            step < num_warmup,
+            _unit_weight_fn,
+            _weight_fn,
+            operands
+        )
+
+        return weights
 
 def make_masked_timeseries_loss_fn(
     loss_fn: callable,
@@ -587,6 +610,7 @@ def make_loss_and_metric_fn(
         labels: jnp.ndarray,
         peak_times: jnp.ndarray,
         valid_lightcurve_mask: jnp.ndarray,
+        step: jnp.ndarray,
     ):
         
         logits = jax.vmap(

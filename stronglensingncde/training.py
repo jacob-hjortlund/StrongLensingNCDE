@@ -1,23 +1,14 @@
 import jax
 jax.config.update("jax_enable_x64", True)
 import time
-import utils
 import diffrax
 
 import numpy as np
 import equinox as eqx  
 import jax.numpy as jnp
+import stronglensingncde.utils as utils
 
 from pathlib import Path
-from optax import tree_utils as otu
-
-# times (N_batch, max_length)
-# flux (N_batch, N_max_imgs, max_length, N_bands)
-# partial_ts (N_batch, N_max_imgs, max_length, N_features)
-# trigger_idx (N_batch,)
-# lengths (N_batch, )
-# binary_labels (N_batch, )
-# multiclass_labels (N_batch, N_max_imgs)
 
 def _interpolate_timeseries(times, flux, partial_ts):
 
