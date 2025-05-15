@@ -54,7 +54,7 @@ def inspect_gradients(
         )
         s = s[:,0,:]
         
-        max_s = max_times + (lengths-1) / 1000
+        max_s = max_times #+ (lengths-1) / 1000
 
         grad_fn = eqx.filter_value_and_grad(loss_fn, has_aux=True)
         (loss, aux), grads = grad_fn(
@@ -85,7 +85,7 @@ def inspect_gradients(
     )
     s = s[:,0,:]
     
-    max_s = max_times + (lengths-1) / 1000
+    max_s = max_times #+ (lengths-1) / 1000
     _, _ = loss_fn(
         model,
         times,
@@ -174,6 +174,15 @@ def save_hyperparams(filename, hyperparams):
 def save_model(filename, model):
     with open(filename, "wb") as f:
         eqx.tree_serialise_leaves(f, model)
+
+def load_model(model_class, hyperparams_path, weights_path):
+    with open(hyperparams_path, "rb") as f:
+        hyperparams = json.loads(f.readline().decode())
+        model = make_model(key=jr.PRNGKey(0), model_class=model_class, hyperparams=hyperparams)
+    
+    with open(weights_path, "rb") as f:
+        
+        return eqx.tree_deserialise_leaves(f, model)
 
 def make_lr_finder_schedule(lr_min: float, lr_max: float, num_steps: int):
     return optax.exponential_decay(
@@ -268,8 +277,6 @@ def lr_range_test(
     #losses = np.mean(losses, axis=0)
 
     return all_lrs, all_losses
-
-import numpy as np
 
 def compute_day_snapshots(times: np.ndarray, trigger_idx: int) -> np.ndarray:
     """
