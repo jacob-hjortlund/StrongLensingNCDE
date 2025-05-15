@@ -10,9 +10,24 @@ import stronglensingncde.utils as utils
 
 from pathlib import Path
 
+def interleave_with_avg(x: jnp.ndarray) -> jnp.ndarray:
+    """
+    Interleave a 1D array by inserting midpoints
+    """
+
+    N = x.shape[0]
+    # allocate output
+    y = jnp.empty((2 * N - 1,), dtype=x.dtype)
+    # place originals at even indices
+    y = y.at[0::2].set(x)
+    # place pairwise averages at odd indices
+    y = y.at[1::2].set((x[:-1] + x[1:]) * 0.5)
+
+    return y
+
 def _interpolate_timeseries(times, flux, partial_ts):
 
-    times_rect, flux_rect = diffrax.rectilinear_interpolation(
+    _, flux_rect = diffrax.rectilinear_interpolation(
         times, flux, replace_nans_at_start=0.
     )
     colors = -jnp.diff(flux_rect, axis=-1)
@@ -21,18 +36,9 @@ def _interpolate_timeseries(times, flux, partial_ts):
         times, partial_ts, replace_nans_at_start=0.
     )
 
-    s_rect = times_rect
-    n_i = times_rect.shape[0]
-    n_j = (n_i+1) / 2
-    i_indeces = jnp.arange(n_i)
-    j_indeces = jnp.arange(n_j)
-    r_mask = (i_indeces % 2).astype(bool)
-    indeces, _ = diffrax.rectilinear_interpolation(
-        j_indeces, j_indeces
-    )
-    indeces = jnp.where(r_mask, indeces-1, indeces) / 1000
-    s_rect = s_rect + indeces
-    s = s_rect[::2]
+
+    s = times
+    s_rect = interleave_with_avg(times)
 
     obs_rect = jnp.concatenate([s_rect[:, None], flux_rect, colors, partial_rect], axis=-1)
 
@@ -67,7 +73,7 @@ def make_train_step(optimizer, loss_fn):
         )
         s = s[:,0,:]
         
-        max_s = max_times + (lengths-1) / 1000
+        max_s = max_times #+ (lengths-1) / 1000
 
         (loss, aux), gradients = gradient_and_loss_fn(
             model,
@@ -109,7 +115,7 @@ def make_val_step(loss_fn):
         )
         s = s[:,0,:]
 
-        max_s = max_times + (lengths-1) / 1000
+        max_s = max_times #+ (lengths-1) / 1000
 
         loss, aux = loss_fn(
             model,
