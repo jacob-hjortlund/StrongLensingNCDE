@@ -53,7 +53,7 @@ training:
     end_value: 1e-6 # Final learning rate
   optimizer_fn: adamw
   training_settings:
-    patience: 10
+    patience: 20
     verbose_steps: True
     verbose_epochs: True
     val_steps_per_epoch: ${training.data_settings.steps_per_epoch}
