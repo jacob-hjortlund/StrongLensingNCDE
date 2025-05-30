@@ -19,7 +19,7 @@ from omegaconf import DictConfig, OmegaConf
 
 colors = sns.color_palette("colorblind")
 
-@hydra.main(version_base=None, config_path="./config", config_name="config")
+@hydra.main(version_base=None, config_path="./stronglensingncde/config", config_name="config")
 def train(cfg: DictConfig) -> None:
 
     print(f"\nWorking directory : {os.getcwd()}")

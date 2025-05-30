@@ -245,6 +245,7 @@ def training_loop(
     save_path: str = None,
     patience: int = 10,
     val_steps_per_epoch: int = None,
+    save_every_n_epochs: int = None,
 ):
     
     total_number_of_epochs = number_of_epochs + number_of_warmup_epochs
@@ -405,6 +406,14 @@ def training_loop(
             if wait >= patience:
                 print(f"\nStopping early at epoch {epoch} (no improvement in {patience} epochs)\n")
                 break
+
+        if save_every_n_epochs:
+            if (epoch-1) % save_every_n_epochs == 0:
+                utils.save_model(save_path / "latest_model.eqx", model)
+                np.save(save_path / "train_losses.npy", training_epoch_losses)
+                np.save(save_path / "train_metrics.npy", training_epoch_metrics)
+                np.save(save_path / "val_losses.npy", val_epoch_losses)
+                np.save(save_path / "val_metrics.npy", val_epoch_metrics)
 
             
 

@@ -199,22 +199,16 @@ def infinite_dataloader(dataloader):
 
 def _lr_range_test(
     model,
-    loss_fn,
+    train_step,
+    optimizer,
+    lr_schedule,
     train_loader,
     num_steps=200,
-    lr_min=1e-7,
-    lr_max=1.0,
-    optimizer=optax.adamw
 ):
-    # rebuild schedule & optimizer inside in case you want different ranges
-    lr_schedule = make_lr_finder_schedule(lr_min, lr_max, num_steps)
-    optimizer = optimizer(learning_rate=lr_schedule)
 
     optimizer_state = optimizer.init(
         eqx.filter(model, eqx.is_inexact_array)
     )
-
-    train_step = training.make_train_step(optimizer, loss_fn)
 
     lrs = []
     losses = []
@@ -247,6 +241,12 @@ def lr_range_test(
     optimizer = getattr(optax, optimizer)
     train_loader = infinite_dataloader(train_loader)
 
+    # rebuild schedule & optimizer inside in case you want different ranges
+    lr_schedule = make_lr_finder_schedule(lr_min, lr_max, num_steps)
+    optimizer = optimizer(learning_rate=lr_schedule)
+
+    train_step = training.make_train_step(optimizer, loss_fn)
+    
     all_lrs = np.zeros((repeats, num_steps))
     all_losses = np.zeros((repeats, num_steps))
     
@@ -262,12 +262,11 @@ def lr_range_test(
 
         lrs, losses = _lr_range_test(
             model,
-            loss_fn,
+            train_step,
+            optimizer,
+            lr_schedule,
             train_loader,
-            num_steps=num_steps,
-            lr_min=lr_min,
-            lr_max=lr_max,
-            optimizer=optimizer
+            num_steps,
         )
 
         all_lrs[repeat] = lrs
