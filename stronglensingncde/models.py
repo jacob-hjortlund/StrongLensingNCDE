@@ -26,7 +26,18 @@ class VectorField(eqx.Module):
     data_size: int
     hidden_size: int
 
-    def __init__(self, data_size, hidden_size, width_size, depth, *, key, **kwargs):
+    def __init__(
+        self,
+        data_size,
+        hidden_size,
+        width_size,
+        depth,
+        activation=jnn.softplus,
+        final_activation=jnn.tanh,
+        *,
+        key,
+        **kwargs
+    ):
         super().__init__(**kwargs)
         self.data_size = data_size
         self.hidden_size = hidden_size
@@ -35,11 +46,11 @@ class VectorField(eqx.Module):
             out_size=hidden_size * data_size,
             width_size=width_size,
             depth=depth,
-            activation=jnn.softplus,
+            activation=activation,
             # Note the use of a tanh final activation function. This is important to
             # stop the model blowing up. (Just like how GRUs and LSTMs constrain the
             # rate of change of their hidden states.)
-            final_activation=jnn.tanh,
+            final_activation=final_activation,
             key=key,
         )
 
@@ -66,14 +77,29 @@ class OnlineNCDE(eqx.Module):
         max_steps,
         rtol=1e-3,
         atol=1e-6,
+        activation=jnn.softplus,
         *,
         key,
         **kwargs
     ):
         super().__init__()
         ikey, fkey, lkey = jr.split(key, 3)
-        self.initial = eqx.nn.MLP(data_size, hidden_size, width_size, depth, key=ikey)
-        self.vector_field = VectorField(data_size, hidden_size, width_size, depth, key=fkey)
+        self.initial = eqx.nn.MLP(
+            data_size,
+            hidden_size,
+            width_size,
+            depth,
+            key=ikey,
+            activation=activation,
+        )
+        self.vector_field = VectorField(
+            data_size,
+            hidden_size,
+            width_size,
+            depth,
+            key=fkey,
+            activation=activation,
+        )
         self.solver = solver
         self.adjoint = adjoint
         self.max_steps = max_steps
@@ -136,6 +162,8 @@ class PoolingONCDEClassifier(eqx.Module):
         classifier_width: int,
         classifier_depth: int,
         num_classes: int,
+        ncde_activation: Callable | str = jnn.softplus,
+        classifier_activation: Callable | str = jnn.leaky_relu,
         *,
         key,
         **kwargs
@@ -158,6 +186,18 @@ class PoolingONCDEClassifier(eqx.Module):
                 raise ValueError(f"Solver method {ncde_solver} not found in diffrax.")
             if is_reversible:
                 ncde_solver = diffrax.Reversible(ncde_solver)
+        
+        if isinstance(ncde_activation, str):
+            try:
+                ncde_activation = getattr(jnn, ncde_activation)()
+            except AttributeError:
+                raise ValueError(f"Activation {ncde_activation} not found in jax.nn.")
+
+        if isinstance(classifier_activation, str):
+            try:
+                classifier_activation = getattr(jnn, classifier_activation)()
+            except AttributeError:
+                raise ValueError(f"Activation {classifier_activation} not found in jax.nn.")
 
         self.ncde = OnlineNCDE(
             data_size=input_feature_size,
@@ -170,6 +210,7 @@ class PoolingONCDEClassifier(eqx.Module):
             rtol=ncde_rtol,
             atol=ncde_atol,
             key=ncde_key,
+            activation=ncde_activation,
         )
 
         self.classifier = eqx.nn.MLP(
@@ -177,8 +218,7 @@ class PoolingONCDEClassifier(eqx.Module):
             out_size=num_classes,
             width_size=classifier_width,
             depth=classifier_depth,
-            activation=jnn.leaky_relu,
-            final_activation=lambda x: x,
+            activation=classifier_activation,
             key=classifier_key,
         )
 

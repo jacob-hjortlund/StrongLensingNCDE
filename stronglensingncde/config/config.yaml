@@ -70,12 +70,14 @@ model:
     input_feature_size: 33
     representation_size: 8
     ncde_width: 128
-    ncde_depth: 1
+    ncde_depth: 4
     ncde_solver: Tsit5     # you can still pass these as strings…
     ncde_adjoint: ReversibleAdjoint
     ncde_max_steps: 1048576
+    ncde_activation: gelu
     classifier_width: 128
     classifier_depth: 2
+    classifier_activation: gelu
     num_classes: 11
     ncde_rtol: 1e-3
     ncde_atol: 1e-3
