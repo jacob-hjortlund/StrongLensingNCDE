@@ -104,14 +104,14 @@ def train(cfg: DictConfig) -> None:
     ncde_lr_schedule = training.make_lr_schedule(
         cfg['training']['ncde_lr_schedule']['fn'],
         warmup_steps=warmup_steps,
-        decay_steps=total_steps,
+        total_steps=total_steps,
         lr_schedule_settings=cfg['training']['ncde_lr_schedule']['settings']
     )
 
     classifier_lr_schedule = training.make_lr_schedule(
         cfg['training']['classifier_lr_schedule']['fn'],
         warmup_steps=warmup_steps,
-        decay_steps=total_steps,
+        total_steps=total_steps,
         lr_schedule_settings=cfg['training']['classifier_lr_schedule']['settings']
     )
 
