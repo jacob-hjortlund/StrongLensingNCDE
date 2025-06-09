@@ -196,7 +196,7 @@ def inner_loop(
     for step in range(number_of_steps):
         
         if fixed_lr is None:
-            current_lr = optimizer_state[0].inner_state.hyperparams['learning_rate']
+            current_lr = optimizer_state[1].inner_state.hyperparams['learning_rate']
         else:
             current_lr = fixed_lr
             
