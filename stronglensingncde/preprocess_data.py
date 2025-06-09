@@ -7,8 +7,8 @@ from tqdm import tqdm
 from pathlib import Path
 from astropy.coordinates import SkyCoord
 
-jolteon_path = Path('/cfs/home/jahj0154/Data/JOLTEON_V1')
-out_path = Path('/cfs/home/jahj0154/Data/JOLTEON_V1_PREPROCESSED')
+jolteon_path = Path('/home/jacob/PhD/Projects/jolteon_model/Data/JOLTEON_V1')
+out_path = Path('/home/jacob/PhD/Projects/jolteon_model/Data/JOLTEON_V1_PREPROCESSED_V2')
 out_path.mkdir(parents=True, exist_ok=True)
 
 out_name_prefix = ""
@@ -52,31 +52,31 @@ heads = heads[heads['MULTICLASS_LABEL'] != 'KN'].reset_index(drop=True)
 for col in redshift_columns:
     heads[f'TRANS_{col}'] = np.asinh(heads[col]/asinh_scale)
 
-snids = heads['SNID'].values
-heads['T_TRIGGER'] = np.nan
+# snids = heads['SNID'].values
+# heads['T_TRIGGER'] = np.nan
 
-for snid in tqdm(snids):
+# for snid in tqdm(snids):
 
-    idx_snid = heads['SNID'] == snid
-    snid_heads = heads.loc[idx_snid]
+#     idx_snid = heads['SNID'] == snid
+#     snid_heads = heads.loc[idx_snid]
 
-    trigger_times = np.zeros(len(snid_heads))
+#     trigger_times = np.zeros(len(snid_heads))
 
-    for i, (_, snid_head) in enumerate(snid_heads.iterrows()):
+#     for i, (_, snid_head) in enumerate(snid_heads.iterrows()):
 
-        img_phot = prep.get_light_curve(snid_head, phots_list)
-        mjd = img_phot['MJD']
-        snr = img_phot['FLUXCAL'] / img_phot['FLUXCALERR']
-        idx_detection = snr >= detection_limit
-        img_phot['DETECTION'] = 0.
-        img_phot.loc[idx_detection, 'DETECTION'] = 1.
+#         img_phot = prep.get_light_curve(snid_head, phots_list)
+#         mjd = img_phot['MJD']
+#         snr = img_phot['FLUXCAL'] / img_phot['FLUXCALERR']
+#         idx_detection = snr >= detection_limit
+#         img_phot['DETECTION'] = 0.
+#         img_phot.loc[idx_detection, 'DETECTION'] = 1.
         
-        idx_trigger = np.where(img_phot['DETECTION'])[0][0]
-        t_trigger = mjd[idx_trigger]
+#         idx_trigger = np.where(img_phot['DETECTION'])[0][0]
+#         t_trigger = mjd[idx_trigger]
 
-        trigger_times[i] = t_trigger
+#         trigger_times[i] = t_trigger
     
-    heads.loc[idx_snid, 'T_TRIGGER'] = trigger_times
+#     heads.loc[idx_snid, 'T_TRIGGER'] = trigger_times
 
 df = heads
 
@@ -110,7 +110,6 @@ match_snids = match_snid[match_snid > 1].index
 
 heads['MATCH_LABELS'] = heads['MULTICLASS_LABEL'].values
 
-label_combos = []
 for snid in match_snids:
 
     idx_snid = heads['MATCH_SNID'] == snid
@@ -128,15 +127,16 @@ train_snids, val_snids = prep.split_snids(
     stratify_on='MATCH_LABELS'
 )
 
-unique_heads = heads.drop_duplicates(subset=['MATCH_SNID'])
-snids = unique_heads['MATCH_SNID'].values
-unique_match_labels = unique_heads['MATCH_LABELS'].values
+#unique_heads = heads.drop_duplicates(subset=['MATCH_SNID'])
+#snids = unique_heads['MATCH_SNID'].values
+#unique_match_labels = unique_heads['MATCH_LABELS'].values
 
+snids = heads['MATCH_SNID'].values
 idx_train = np.isin(snids, train_snids)
 idx_val = np.isin(snids, val_snids)
 
-train_heads = unique_heads[idx_train]
-val_heads = unique_heads[idx_val]
+train_heads = heads[idx_train]
+val_heads = heads[idx_val]
 
 print('Calculating training statistics...')
 
