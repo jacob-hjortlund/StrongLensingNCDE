@@ -2,7 +2,7 @@ import os
 import jax
 jax.config.update("jax_enable_x64", True)
 
-
+import torch
 import optax
 import hydra
 
@@ -71,8 +71,10 @@ def train(cfg: DictConfig) -> None:
         **cfg['training']['data_settings']
     )
 
-
-    n_classes = len(train_dataset.class_counts_array)
+    if isinstance(train_dataset, torch.utils.data.dataset.Subset):
+        n_classes = len(train_dataset.dataset.class_counts_array)
+    else:
+        n_classes = len(train_dataset.class_counts_array)
     cfg['model']['hyperparams']['num_classes'] = n_classes
     steps_per_epoch = cfg['training']['data_settings']['steps_per_epoch']
     num_full_passes = cfg['training']['data_settings']['num_full_passes']
