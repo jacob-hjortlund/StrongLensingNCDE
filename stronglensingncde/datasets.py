@@ -133,7 +133,7 @@ class HDF5TimeSeriesDataset(Dataset):
                 multiclass_labels = f[sample_key].attrs['MULTICLASS_LABEL']
                 multiclass_labels = np.char.decode(multiclass_labels)
                 multiclass_label_set = set(multiclass_labels)
-                no_intersection = len(label_subset & multiclass_label_set) < 1
+                no_intersection = (len(label_subset & multiclass_label_set) < 1) or (len(multiclass_label_set) != 2)
 
                 if no_intersection and classes:
                     class_filtering_count += 1
