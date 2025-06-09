@@ -20,6 +20,8 @@ training:
     max_obs: False
     classes: null
     verbose: True
+    subsample: False
+    subsample_max_size: null
   loss_settings:
     loss_components:
       - temporal_cross_entropy_loss

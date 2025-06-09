@@ -5,11 +5,10 @@ import matplotlib.pyplot as plt
 
 from pathlib import Path
 from collections import Counter
+from collections import defaultdict
 from torch.utils.data import Sampler
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import StratifiedKFold
-from torch.utils.data import DataLoader, get_worker_info
+from torch.utils.data import Dataset, DataLoader, Subset, get_worker_info
 
 def create_normalization_func(stats, key):
 
@@ -99,6 +98,7 @@ class HDF5TimeSeriesDataset(Dataset):
         
         self.h5_file_path = h5_file_path
         self.sample_keys = []
+        self.labels = []
         self.max_length = 0
         self.n_max_images = 0
         self.flux_transform = flux_transform
@@ -121,6 +121,8 @@ class HDF5TimeSeriesDataset(Dataset):
             n_obs_filtered_count = 0
             class_filtering_count = 0
             self.sample_keys = []
+            self.key_to_label = {}
+
             for sample_key in all_keys:
 
                 n_obs = len(f[sample_key]['TRANS_MJD'])
@@ -140,11 +142,14 @@ class HDF5TimeSeriesDataset(Dataset):
                     self.sample_keys.append(sample_key)
                     class_labels.update(set(multiclass_labels))
                     class_label_counter.update(multiclass_labels.tolist())
+                    self.key_to_label[sample_key] = multiclass_labels[0]
 
                     # Determine max length for padding
                     t_mjd = f[sample_key]['TRANS_MJD']
                     if len(t_mjd) > self.max_length:
                         self.max_length = len(t_mjd)
+                    
+
 
             class_labels.remove('None')
             n_labels = len(class_labels)
@@ -186,6 +191,12 @@ class HDF5TimeSeriesDataset(Dataset):
                     ] for i in range(n_labels)
                 ]
             )
+
+            self.labels = [
+                self.label_to_idx[
+                    self.key_to_label[key]
+                ] for key in self.sample_keys
+            ]
 
             unfiltered_size = len(all_keys)
             filtered_size = len(self.sample_keys)
@@ -346,7 +357,6 @@ def pad_last(ts_list, lengths, max_length):
 
     return padded
 
-
 def collate_fn(batch, max_length=None, nmax=None):
     
     (
@@ -399,7 +409,6 @@ def collate_fn(batch, max_length=None, nmax=None):
 
     return output
 
-
 def _worker_init_fn(worker_id):
     """
     Ensure each worker process opens its own HDF5 file handle,
@@ -410,6 +419,28 @@ def _worker_init_fn(worker_id):
         # delete any inherited file handle so __getitem__ reopens
         del worker_dataset.h5_file
 
+def create_subset(dataset, max_size=None, seed=42):
+
+    labels = dataset.labels
+    class_to_idxs = defaultdict(list)
+
+    for idx, lbl in enumerate(labels):
+        class_to_idxs[lbl].append(idx)
+
+    min_count = min(len(lst) for lst in class_to_idxs.values())
+    if max_size:
+        min_count = min((min_count, max_size))
+
+    rng = np.random.default_rng(seed=seed)
+    balanced_indices = []
+    for lbl, idx_list in class_to_idxs.items():
+        chosen = rng.choice(idx_list, size=min_count, replace=False).tolist()
+        balanced_indices.extend(chosen)
+    
+    subset = Subset(dataset, balanced_indices)
+    
+    return subset
+
 def make_dataloader(
     h5_path: str,
     batch_size: int = 32,
@@ -418,6 +449,9 @@ def make_dataloader(
     pin_memory: bool = True,
     max_length: int = None,
     max_obs: int = None,
+    subsample: bool = False,
+    subsample_max_size: int = None,
+    seed: int = 42,
     **dataset_kwargs
 ) -> DataLoader:
     """
@@ -435,9 +469,13 @@ def make_dataloader(
     """
     ds = HDF5TimeSeriesDataset(h5_path, **dataset_kwargs)
 
-    # infer once if the user didn’t override
     if max_length is None:
         max_length = ds.max_length
+
+    if subsample:
+        ds = create_subset(
+            ds, max_size=subsample_max_size, seed=seed
+        )
 
     return DataLoader(
         ds,
