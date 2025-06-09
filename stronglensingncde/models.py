@@ -189,13 +189,13 @@ class PoolingONCDEClassifier(eqx.Module):
         
         if isinstance(ncde_activation, str):
             try:
-                ncde_activation = getattr(jnn, ncde_activation)()
+                ncde_activation = getattr(jnn, ncde_activation)
             except AttributeError:
                 raise ValueError(f"Activation {ncde_activation} not found in jax.nn.")
 
         if isinstance(classifier_activation, str):
             try:
-                classifier_activation = getattr(jnn, classifier_activation)()
+                classifier_activation = getattr(jnn, classifier_activation)
             except AttributeError:
                 raise ValueError(f"Activation {classifier_activation} not found in jax.nn.")
 
