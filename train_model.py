@@ -99,25 +99,41 @@ def train(cfg: DictConfig) -> None:
     warmup_steps = num_warmup_epochs * steps_per_epoch
     total_steps = warmup_steps + num_epochs * steps_per_epoch
 
-    lr_schedule_fn = getattr(
-        optax.schedules,
-        cfg['training']['lr_schedule_fn']
-    )
-    lr_schedule = lr_schedule_fn(
+    ncde_lr_schedule = training.make_lr_schedule(
+        cfg['training']['ncde_lr_schedule']['fn'],
         warmup_steps=warmup_steps,
         decay_steps=total_steps,
-        **cfg['training']['lr_schedule_settings']
+        lr_schedule_settings=cfg['training']['ncde_lr_schedule']['settings']
+    )
+
+    classifier_lr_schedule = training.make_lr_schedule(
+        cfg['training']['classifier_lr_schedule']['fn'],
+        warmup_steps=warmup_steps,
+        decay_steps=total_steps,
+        lr_schedule_settings=cfg['training']['classifier_lr_schedule']['settings']
     )
 
     optimizer_fn = getattr(
         optax,
         cfg['training']['optimizer_fn']
     )
+
+    ncde_mask_fn = training.make_optimizer_mask_fn('ncde')
+    ncde_optimizer = optax.masked(
+        optax.inject_hyperparams(optimizer_fn)(ncde_lr_schedule),
+        mask=ncde_mask_fn
+    )
+    
+    classifier_mask_fn = training.make_optimizer_mask_fn('classifier')
+    classifier_optimizer = optax.masked(
+        optax.inject_hyperparams(optimizer_fn)(classifier_lr_schedule),
+        mask=classifier_mask_fn
+    )
+
     optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
-        optax.inject_hyperparams(
-            optimizer_fn
-        )(lr_schedule)
+        optax.clip_by_global_norm(10.0),
+        ncde_optimizer,
+        classifier_optimizer,
     )
 
     # ------------------------- Model Setup and Training ------------------------- #

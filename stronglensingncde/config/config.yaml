@@ -47,13 +47,20 @@ training:
     temporal_weight_fn_kwargs:
       gamma: 0.5
       eps: 1e-8
-  lr_schedule_fn: warmup_cosine_decay_schedule
-  num_warmup_epochs: 5
-  lr_schedule_settings:
-    init_value: 1e-6 # Initial learning rate
-    peak_value: 2e-3 # Peak learning rate
-    end_value: 1e-6 # Final learning rate
   optimizer_fn: adamw
+  ncde_lr_schedule:
+    fn: warmup_cosine_decay_schedule
+    settings:
+      init_value: 1e-6 # Initial learning rate
+      peak_value: 2e-3 # Peak learning rate
+      end_value: 1e-6 # Final learning rate
+  classifier_lr_schedule:
+    fn: warmup_cosine_decay_schedule
+    settings:
+      init_value: 1e-5 # Initial learning rate
+      peak_value: 2e-2 # Peak learning rate
+      end_value: 1e-5 # Final learning rate
+  num_warmup_epochs: 5
   training_settings:
     patience: 20
     verbose_steps: True

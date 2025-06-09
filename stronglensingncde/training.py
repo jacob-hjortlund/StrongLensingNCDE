@@ -1,6 +1,7 @@
 import jax
 jax.config.update("jax_enable_x64", True)
 import time
+import optax
 import diffrax
 
 import numpy as np
@@ -9,6 +10,8 @@ import jax.numpy as jnp
 import stronglensingncde.utils as utils
 
 from pathlib import Path
+from collections.abc import Callable
+from jax.tree_util import tree_map_with_path, keystr
 
 def interleave_with_avg(x: jnp.ndarray) -> jnp.ndarray:
     """
@@ -53,6 +56,39 @@ batch_mapped_interpolate_timeseries = jax.vmap(
     in_axes=(0, 0, 0)
 )
 interpolate_timeseries = eqx.filter_jit(batch_mapped_interpolate_timeseries)
+
+def make_lr_schedule(
+    lr_schedule_fn: Callable | str,
+    warmup_steps,
+    total_steps,
+    lr_schedule_settings: dict = {}
+):
+    
+    if isinstance(lr_schedule_fn, str):
+        # If a string is provided, use the corresponding Optax schedule
+        try:
+            lr_schedule_fn = getattr(optax.schedules, lr_schedule_fn)
+        except AttributeError:
+            raise ValueError(f"Schedule {lr_schedule_fn} not found in optax.schedules.")
+    
+    lr_schedule = lr_schedule_fn(
+        warmup_steps=warmup_steps,
+        decay_steps=total_steps,
+        **lr_schedule_settings
+    )
+
+    return lr_schedule
+
+def make_optimizer_mask_fn(target='ncde'):
+
+    def mask_fn(grads):
+
+        return tree_map_with_path(
+            lambda path, x: target in keystr(path),
+            grads
+        )
+    
+    return mask_fn
 
 def make_train_step(optimizer, loss_fn):
 
@@ -160,7 +196,7 @@ def inner_loop(
     for step in range(number_of_steps):
         
         if fixed_lr is None:
-            current_lr = optimizer_state[1].hyperparams['learning_rate']
+            current_lr = optimizer_state[0].inner_state.hyperparams['learning_rate']
         else:
             current_lr = fixed_lr
             
