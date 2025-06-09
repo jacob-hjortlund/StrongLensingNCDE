@@ -52,13 +52,13 @@ training:
     fn: warmup_cosine_decay_schedule
     settings:
       init_value: 1e-6 # Initial learning rate
-      peak_value: 2e-3 # Peak learning rate
+      peak_value: 1e-3 # Peak learning rate
       end_value: 1e-6 # Final learning rate
   classifier_lr_schedule:
     fn: warmup_cosine_decay_schedule
     settings:
       init_value: 1e-5 # Initial learning rate
-      peak_value: 2e-2 # Peak learning rate
+      peak_value: 1e-2 # Peak learning rate
       end_value: 1e-5 # Final learning rate
   num_warmup_epochs: 5
   training_settings:
