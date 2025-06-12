@@ -22,6 +22,7 @@ training:
     verbose: True
     subsample: False
     subsample_max_size: null
+    prefetch_factor: 4
   loss_settings:
     loss_components:
       - temporal_cross_entropy_loss
