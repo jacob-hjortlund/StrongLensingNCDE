@@ -453,7 +453,7 @@ def torch_to_jax(batch, torch_device, jax_device):
     for item in batch:
         cuda_item = item.to(torch_device, non_blocking=True)
         dl = to_dlpack(cuda_item)
-        jax_arr = from_dlpack(jax_device, dl)
+        jax_arr = from_dlpack(dl, device=jax_device)
         jax_batch.append(jax_arr)
 
     return jax_batch
