@@ -1,3 +1,4 @@
+import jax
 import h5py
 import torch
 import numpy as np
@@ -5,10 +6,14 @@ import matplotlib.pyplot as plt
 
 from pathlib import Path
 from collections import Counter
+from jax.dlpack import from_dlpack
 from collections import defaultdict
 from torch.utils.data import Sampler
+from torch.utils.dlpack import to_dlpack
 from torch.nn.utils.rnn import pad_sequence
+from flax.jax_utils import prefetch_to_device
 from torch.utils.data import Dataset, DataLoader, Subset, get_worker_info
+
 
 def create_normalization_func(stats, key):
 
@@ -69,6 +74,7 @@ class HDF5TimeSeriesDataset(Dataset):
         seed: int = 42,
         classes: list[str] = None,
         verbose: bool = True,
+        min_n_obs: int = 3,
         **kwargs
     ):
         
@@ -126,7 +132,7 @@ class HDF5TimeSeriesDataset(Dataset):
             for sample_key in all_keys:
 
                 n_obs = len(f[sample_key]['TRANS_MJD'])
-                if n_obs < 2:
+                if n_obs < min_n_obs:
                     n_obs_filtered_count += 1
                     continue
 
@@ -296,7 +302,7 @@ class HDF5TimeSeriesDataset(Dataset):
             numeric_binary_label,
             trigger_idx, length,
             max_time, peak_time,
-            valid_lightcurve_mask
+            valid_lightcurve_mask,
         )
 
         return output
@@ -441,6 +447,27 @@ def create_subset(dataset, max_size=None, seed=42):
     
     return subset
 
+def torch_to_jax(batch):
+
+    jax_batch = []
+    for item in batch:
+        cuda_item = item.to(non_blocking=True)
+        dl = to_dlpack(cuda_item)
+        jax_arr = from_dlpack(dl)
+        jax_batch.append(jax_arr)
+
+    return jax_batch
+
+def make_jax_prefetched_loader(torch_loader, prefetch_size=2):
+    """
+    Wraps the PyTorch loader and DLPack conversion into a prefetching JAX iterator.
+    """
+    def gen():
+        for torch_batch in torch_loader:
+            yield torch_to_jax(torch_batch)
+
+    return prefetch_to_device(gen(), size=prefetch_size)
+
 def make_dataloader(
     h5_path: str,
     batch_size: int = 32,
@@ -452,6 +479,7 @@ def make_dataloader(
     subsample: bool = False,
     subsample_max_size: int = None,
     seed: int = 42,
+    prefetch_factor: int = 4,
     **dataset_kwargs
 ) -> DataLoader:
     """
@@ -477,12 +505,17 @@ def make_dataloader(
             ds, max_size=subsample_max_size, seed=seed
         )
 
-    return DataLoader(
+    dataloader = DataLoader(
         ds,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=pin_memory,
         collate_fn=lambda batch: collate_fn(batch, max_length=max_length, nmax=max_obs),
-        worker_init_fn=_worker_init_fn
-    ), ds
+        worker_init_fn=_worker_init_fn,
+        prefetch_factor=prefetch_factor
+    )
+
+    dataloader = make_jax_prefetched_loader(dataloader, prefetch_size=prefetch_factor)
+
+    return dataloader, ds

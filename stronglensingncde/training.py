@@ -201,7 +201,7 @@ def inner_loop(
             current_lr = fixed_lr
             
         data = next(dataloader)
-        data = [output.numpy() for output in data]
+        #data = [output.numpy() for output in data]
         
         t_step_init = time.time()
         loss, aux, model, optimizer_state = step_fn(
