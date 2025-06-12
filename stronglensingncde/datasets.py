@@ -515,7 +515,8 @@ def make_dataloader(
         worker_init_fn=_worker_init_fn,
         prefetch_factor=prefetch_factor
     )
+    dataloader_len = len(dataloader)
 
     dataloader = make_jax_prefetched_loader(dataloader, prefetch_size=prefetch_factor)
 
-    return dataloader, ds
+    return dataloader, ds, dataloader_len

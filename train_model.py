@@ -55,7 +55,7 @@ def train(cfg: DictConfig) -> None:
         specz_norm, specz_err_norm, photoz_norm, photoz_err_norm
     )
 
-    train_dataloader, train_dataset = datasets.make_dataloader(
+    train_dataloader, train_dataset, train_len = datasets.make_dataloader(
         h5_path=train_path,
         flux_transform=flux_norm,
         flux_err_transform=flux_err_norm,
@@ -63,7 +63,7 @@ def train(cfg: DictConfig) -> None:
         **cfg['training']['data_settings']
     )
 
-    val_dataloader, val_dataset = datasets.make_dataloader(
+    val_dataloader, _, _ = datasets.make_dataloader(
         h5_path=val_path,
         flux_transform=flux_norm,
         flux_err_transform=flux_err_norm,
@@ -78,9 +78,9 @@ def train(cfg: DictConfig) -> None:
     cfg['model']['hyperparams']['num_classes'] = n_classes
     steps_per_epoch = cfg['training']['data_settings']['steps_per_epoch']
     if steps_per_epoch is None:
-        steps_per_epoch = len(train_dataloader)
+        steps_per_epoch = train_len
     num_full_passes = cfg['training']['data_settings']['num_full_passes']
-    num_batches_in_dataset = len(train_dataloader)
+    num_batches_in_dataset = train_len
     epochs_in_full_pass = num_batches_in_dataset / steps_per_epoch
     num_epochs = int(np.ceil(num_full_passes * epochs_in_full_pass))
 
