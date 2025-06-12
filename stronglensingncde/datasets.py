@@ -452,11 +452,12 @@ def torch_to_jax(batch, torch_device, jax_device):
     jax_batch = []
     for item in batch:
         cuda_item = item.to(torch_device, non_blocking=True)
+        cuda_item = cuda_item.contiguous()  # Ensure contiguous memory layout
         dl = to_dlpack(cuda_item)
         jax_arr = from_dlpack(dl, device=jax_device)
         jax_batch.append(jax_arr)
 
-    return jax_batch
+    return tuple(jax_batch)
 
 def make_jax_prefetched_loader(
     torch_loader, prefetch_size=2,
