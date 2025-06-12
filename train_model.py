@@ -63,7 +63,7 @@ def train(cfg: DictConfig) -> None:
         **cfg['training']['data_settings']
     )
 
-    val_dataloader, _, _ = datasets.make_dataloader(
+    val_dataloader, _, val_len = datasets.make_dataloader(
         h5_path=val_path,
         flux_transform=flux_norm,
         flux_err_transform=flux_err_norm,
@@ -79,6 +79,9 @@ def train(cfg: DictConfig) -> None:
     steps_per_epoch = cfg['training']['data_settings']['steps_per_epoch']
     if steps_per_epoch is None:
         steps_per_epoch = train_len
+        cfg['training']['data_settings']['steps_per_epoch'] = steps_per_epoch
+    if cfg['training']['data_settings']['val_steps_per_epoch'] is None:
+        cfg['training']['data_settings']['val_steps_per_epoch'] = val_len
     num_full_passes = cfg['training']['data_settings']['num_full_passes']
     num_batches_in_dataset = train_len
     epochs_in_full_pass = num_batches_in_dataset / steps_per_epoch
@@ -161,6 +164,15 @@ def train(cfg: DictConfig) -> None:
         num_loss_components = len(
             cfg['training']['loss_settings']['loss_components']
         )
+
+    if cfg['training']['training_settings']['verbose_epochs']:
+        init_str = (
+            f"\nNum. Full Passes: {num_full_passes:.2f} | "+
+            f"Num. Warmup Epochs: {num_warmup_epochs} | " +
+            f"Num. Train Epochs: {num_epochs} | " +
+            f"Batches per Epoch: {steps_per_epoch}\n"
+        )
+        print(init_str)
 
     model, optimizer_state, train_log, val_log = training.training_loop(
         model=model,

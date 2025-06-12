@@ -280,8 +280,8 @@ def training_loop(
     verbose_epochs: bool = True,
     save_path: str = None,
     patience: int = 10,
-    val_steps_per_epoch: int = None,
-    save_every_n_epochs: int = None,
+    val_steps_per_epoch: int = 1,
+    save_every_n_epochs: int = 1,
 ):
     
     total_number_of_epochs = number_of_epochs + number_of_warmup_epochs
@@ -300,22 +300,6 @@ def training_loop(
         while True:
             for data in dataloader:
                 yield data
-
-    if verbose_epochs:
-        num_batches_in_dataset = len(train_dataloader)
-        num_full_passes = total_number_of_epochs * steps_per_epoch / num_batches_in_dataset
-        init_str = (
-            f"\nNum. Full Passes: {num_full_passes:.2f} | "+
-            f"Num. Warmup Epochs: {number_of_warmup_epochs} | " +
-            f"Num. Train Epochs: {number_of_epochs} | " +
-            f"Batches per Epoch: {steps_per_epoch}\n"
-        )
-        print(init_str)
-
-    if steps_per_epoch is None:
-        steps_per_epoch = len(train_dataloader)
-    if val_steps_per_epoch is None:
-        val_steps_per_epoch = len(val_dataloader) 
 
     train_dataloader = infinite_dataloader(train_dataloader)
     val_dataloader = infinite_dataloader(val_dataloader)
