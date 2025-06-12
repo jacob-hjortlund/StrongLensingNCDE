@@ -77,6 +77,8 @@ def train(cfg: DictConfig) -> None:
         n_classes = len(train_dataset.class_counts_array)
     cfg['model']['hyperparams']['num_classes'] = n_classes
     steps_per_epoch = cfg['training']['data_settings']['steps_per_epoch']
+    if steps_per_epoch is None:
+        steps_per_epoch = len(train_dataloader)
     num_full_passes = cfg['training']['data_settings']['num_full_passes']
     num_batches_in_dataset = len(train_dataloader)
     epochs_in_full_pass = num_batches_in_dataset / steps_per_epoch
