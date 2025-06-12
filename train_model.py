@@ -22,6 +22,23 @@ from omegaconf import DictConfig, OmegaConf
 @hydra.main(version_base=None, config_path="./stronglensingncde/config", config_name="config")
 def train(cfg: DictConfig) -> None:
 
+    jax_devices = jax.devices()
+    print(f"JAX devices: {jax_devices}")
+
+    print("PyTorch  CUDA available:", torch.cuda.is_available())
+
+    if torch.cuda.is_available():
+        # How many GPU devices?
+        n_gpu = torch.cuda.device_count()
+        print(f"Number of GPUs: {n_gpu}")
+
+        # Which one is the current default?
+        print("Current device index:", torch.cuda.current_device())
+
+        # Print out each device’s name
+        for i in range(n_gpu):
+            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+
     print(f"\nWorking directory : {os.getcwd()}")
     print(f"Hydra Output directory  : {hydra.core.hydra_config.HydraConfig.get().runtime.output_dir}\n")
 
