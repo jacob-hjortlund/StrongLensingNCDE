@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 import pandas as pd
 import astropy.table as at
@@ -7,6 +8,8 @@ from pathlib import Path
 from astropy.io import fits
 from functools import reduce
 from sklearn.model_selection import train_test_split
+from collections import defaultdict
+
 
 
 label_mappings = {
@@ -196,6 +199,134 @@ def process_light_curve(
 
     return phot
 
+def group_by_night(t):
+    """
+    Group Modified Julian Date times by astronomical night.
+    
+    A night is defined as the period from day.5 to (day+1).5, where day is an integer.
+    For example, night 6091 spans from MJD 6090.5 to 6091.5.
+    
+    Parameters:
+    -----------
+    t : array-like
+        Array of Modified Julian Date values
+    
+    Returns:
+    --------
+    dict
+        Dictionary where keys are night numbers (integers) and values are lists
+        of indices from the original array that belong to that night
+    """
+    t = np.array(t)
+    nights = defaultdict(list)
+    
+    # For each time, determine which night it belongs to
+    for i, time in enumerate(t):
+        # Night number is floor(time + 0.5)
+        # This ensures that times from day.5 to (day+1).5 map to night (day+1)
+        night = int(np.floor(time + 0.5))
+        nights[night].append(i)
+    
+    return dict(nights)
+
+def stack_observations(
+    img_phot, relative_error_floor=0.01,
+    bands = ['u', 'g', 'r', 'i', 'z', 'Y'],
+    added_columns: list[str] = [
+        'TRANS_SPECZ', 'TRANS_SPECZ_ERR',
+        'TRANS_PHOTOZ', 'TRANS_PHOTOZ_ERR'
+    ]
+):
+
+    warnings.filterwarnings(
+        'ignore',
+        message='Mean of empty slice',
+        category=RuntimeWarning
+    )
+
+    times = img_phot['MJD'].values
+    nights_dict = group_by_night(times)
+
+    nights = sorted(nights_dict.keys())
+    n_nights = len(nights)
+
+    columns = {
+        'MJD': np.zeros(n_nights),
+    }
+    for band in bands:
+        columns[f'{band}_FLUX'] = np.full(n_nights, np.nan)
+        columns[f'{band}_FLUXERR'] = np.full(n_nights, np.nan)
+        columns[f'{band}_DET'] = np.zeros(n_nights)
+        columns[f'{band}_OBS'] = np.zeros(n_nights)
+    for added_column in added_columns:
+        columns[added_column] = np.full(n_nights, np.nan)
+
+    flux_cols = [f'{band}_FLUX' for band in bands]
+    flux_err_cols = [f'{band}_FLUXERR' for band in bands]
+    det_cols = [f'{band}_DET' for band in bands]
+    obs_cols = [f'{band}_OBS' for band in bands]
+
+    flux = img_phot[flux_cols].values
+    flux_err = img_phot[flux_err_cols].values
+    det = img_phot[det_cols].values
+    obs = img_phot[obs_cols].values
+    weights = 1. / flux_err**2
+    added_cols = img_phot[added_columns].values
+
+    for i, night in enumerate(nights):
+
+        idx = nights_dict[night]
+        columns['MJD'][i] = float(night)
+
+        for j, band in enumerate(bands):
+
+            band_weights = weights[:, j]
+            band_flux = flux[:, j]
+            band_det = det[:, j]
+            band_obs = obs[:, j]
+
+            valid_obs = ~np.isnan(band_weights[idx])
+            any_valid = np.any(valid_obs)
+
+            avg_flux = np.nan
+            avg_flux_err = np.nan
+            night_det = 0
+            night_obs = 0
+
+            if any_valid:
+                normed_weights = band_weights[idx] / np.nansum(band_weights[idx])
+                avg_flux = np.nansum(band_flux[idx] * normed_weights)
+
+                if np.sum(valid_obs) > 1:
+                    avg_flux_err = np.sqrt(
+                        1. / np.nansum(band_weights[idx]) +
+                        (relative_error_floor*avg_flux)**2
+                    )
+                else:
+                    avg_flux_err = np.sqrt(1. / np.nansum(band_weights[idx]))
+
+                night_det = np.max(band_det[idx])
+                night_obs = np.max(band_obs[idx])
+
+            columns[f'{band}_FLUX'][i] = avg_flux
+            columns[f'{band}_FLUXERR'][i] = avg_flux_err
+            columns[f'{band}_DET'][i] = night_det
+            columns[f'{band}_OBS'][i] = night_obs
+
+        for j, added_column in enumerate(added_columns):
+            columns[added_column][i] = np.nanmean(added_cols[idx, j])
+
+    for band in bands:
+        columns[f'{band}_OBS'] = np.cumsum(
+            columns[f'{band}_OBS'] > 0
+        )
+    
+    stacked_phot = pd.DataFrame(columns)
+
+    warnings.resetwarnings()
+
+    return stacked_phot
+
 def merge_frames(data_frames: list[pd.DataFrame], on='MJD') -> pd.DataFrame:
 
     return reduce(lambda left, right: pd.merge(left, right, on=on, how='outer'), data_frames)
@@ -217,6 +348,11 @@ def join_transient_images(
         
         img_phot = get_light_curve(img_head, phots, columns_to_add=added_columns)
         img_phot = process_light_curve(img_phot, added_columns=added_columns)
+        img_phot = stack_observations(
+            img_phot,
+            relative_error_floor=0.01,
+            added_columns=added_columns
+        )
 
         columns = img_phot.columns
         cols_to_rename = columns.delete(0)
@@ -301,4 +437,4 @@ def transform_image_timeseries(
     image_timeseries = image_timeseries.rename(columns=dict(new_column_names))
 
 
-    return image_timeseries, trigger_index
+    return image_timeseries, trigger_index, transformed_flux, transformed_flux_errs
