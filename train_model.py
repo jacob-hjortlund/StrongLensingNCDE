@@ -22,23 +22,6 @@ from omegaconf import DictConfig, OmegaConf
 @hydra.main(version_base=None, config_path="./stronglensingncde/config", config_name="config")
 def train(cfg: DictConfig) -> None:
 
-    jax_devices = jax.devices()
-    print(f"JAX devices: {jax_devices}")
-
-    print("PyTorch  CUDA available:", torch.cuda.is_available())
-
-    if torch.cuda.is_available():
-        # How many GPU devices?
-        n_gpu = torch.cuda.device_count()
-        print(f"Number of GPUs: {n_gpu}")
-
-        # Which one is the current default?
-        print("Current device index:", torch.cuda.current_device())
-
-        # Print out each device’s name
-        for i in range(n_gpu):
-            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-
     print(f"\nWorking directory : {os.getcwd()}")
     print(f"Hydra Output directory  : {hydra.core.hydra_config.HydraConfig.get().runtime.output_dir}\n")
 
@@ -72,7 +55,7 @@ def train(cfg: DictConfig) -> None:
         specz_norm, specz_err_norm, photoz_norm, photoz_err_norm
     )
 
-    train_dataloader, train_dataset, train_len = datasets.make_dataloader(
+    train_dataloader, train_dataset = datasets.make_dataloader(
         h5_path=train_path,
         flux_transform=flux_norm,
         flux_err_transform=flux_err_norm,
@@ -80,7 +63,7 @@ def train(cfg: DictConfig) -> None:
         **cfg['training']['data_settings']
     )
 
-    val_dataloader, _, val_len = datasets.make_dataloader(
+    val_dataloader, val_dataset = datasets.make_dataloader(
         h5_path=val_path,
         flux_transform=flux_norm,
         flux_err_transform=flux_err_norm,
@@ -95,12 +78,9 @@ def train(cfg: DictConfig) -> None:
     cfg['model']['hyperparams']['num_classes'] = n_classes
     steps_per_epoch = cfg['training']['data_settings']['steps_per_epoch']
     if steps_per_epoch is None:
-        steps_per_epoch = train_len
-        cfg['training']['data_settings']['steps_per_epoch'] = steps_per_epoch
-    if cfg['training']['training_settings']['val_steps_per_epoch'] is None:
-        cfg['training']['training_settings']['val_steps_per_epoch'] = val_len
+        steps_per_epoch = len(train_dataloader)
     num_full_passes = cfg['training']['data_settings']['num_full_passes']
-    num_batches_in_dataset = train_len
+    num_batches_in_dataset = len(train_dataloader)
     epochs_in_full_pass = num_batches_in_dataset / steps_per_epoch
     num_epochs = int(np.ceil(num_full_passes * epochs_in_full_pass))
 
@@ -181,15 +161,6 @@ def train(cfg: DictConfig) -> None:
         num_loss_components = len(
             cfg['training']['loss_settings']['loss_components']
         )
-
-    if cfg['training']['training_settings']['verbose_epochs']:
-        init_str = (
-            f"\nNum. Full Passes: {num_full_passes:.2f} | "+
-            f"Num. Warmup Epochs: {num_warmup_epochs} | " +
-            f"Num. Train Epochs: {num_epochs} | " +
-            f"Batches per Epoch: {steps_per_epoch}\n"
-        )
-        print(init_str)
 
     model, optimizer_state, train_log, val_log = training.training_loop(
         model=model,

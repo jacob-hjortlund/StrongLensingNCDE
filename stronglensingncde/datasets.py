@@ -1,4 +1,3 @@
-import jax
 import h5py
 import torch
 import numpy as np
@@ -6,14 +5,10 @@ import matplotlib.pyplot as plt
 
 from pathlib import Path
 from collections import Counter
-from jax.dlpack import from_dlpack
 from collections import defaultdict
 from torch.utils.data import Sampler
-from torch.utils.dlpack import to_dlpack
 from torch.nn.utils.rnn import pad_sequence
-from flax.jax_utils import prefetch_to_device
 from torch.utils.data import Dataset, DataLoader, Subset, get_worker_info
-
 
 def create_normalization_func(stats, key):
 
@@ -74,7 +69,6 @@ class HDF5TimeSeriesDataset(Dataset):
         seed: int = 42,
         classes: list[str] = None,
         verbose: bool = True,
-        min_n_obs: int = 3,
         **kwargs
     ):
         
@@ -132,7 +126,7 @@ class HDF5TimeSeriesDataset(Dataset):
             for sample_key in all_keys:
 
                 n_obs = len(f[sample_key]['TRANS_MJD'])
-                if n_obs < min_n_obs:
+                if n_obs < 2:
                     n_obs_filtered_count += 1
                     continue
 
@@ -302,7 +296,7 @@ class HDF5TimeSeriesDataset(Dataset):
             numeric_binary_label,
             trigger_idx, length,
             max_time, peak_time,
-            valid_lightcurve_mask,
+            valid_lightcurve_mask
         )
 
         return output
@@ -447,34 +441,6 @@ def create_subset(dataset, max_size=None, seed=42):
     
     return subset
 
-def torch_to_jax(batch, torch_device, jax_device):
-
-    jax_batch = []
-    for item in batch:
-        cuda_item = item.to(torch_device, non_blocking=True)
-        cuda_item = cuda_item.contiguous()  # Ensure contiguous memory layout
-        dl = to_dlpack(cuda_item)
-        jax_arr = from_dlpack(dl, device=jax_device)
-        jax_batch.append(jax_arr)
-
-    return tuple(jax_batch)
-
-def make_jax_prefetched_loader(
-    torch_loader, prefetch_size=2,
-    torch_device=torch.device('cuda:0'),
-    jax_device=jax.devices('gpu')[0]
-):
-    """
-    Wraps the PyTorch loader and DLPack conversion into a prefetching JAX iterator.
-    """
-    def gen():
-        for torch_batch in torch_loader:
-            yield torch_to_jax(
-                torch_batch, torch_device=torch_device, jax_device=jax_device
-            )
-
-    return gen()
-
 def make_dataloader(
     h5_path: str,
     batch_size: int = 32,
@@ -486,7 +452,6 @@ def make_dataloader(
     subsample: bool = False,
     subsample_max_size: int = None,
     seed: int = 42,
-    prefetch_factor: int = 4,
     **dataset_kwargs
 ) -> DataLoader:
     """
@@ -512,24 +477,12 @@ def make_dataloader(
             ds, max_size=subsample_max_size, seed=seed
         )
 
-    dataloader = DataLoader(
+    return DataLoader(
         ds,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=pin_memory,
         collate_fn=lambda batch: collate_fn(batch, max_length=max_length, nmax=max_obs),
-        worker_init_fn=_worker_init_fn,
-        prefetch_factor=prefetch_factor
-    )
-    dataloader_len = len(dataloader)
-
-    torch_device = torch.device('cuda:0')
-    jax_device = jax.devices('gpu')[0]
-
-    dataloader = make_jax_prefetched_loader(
-        dataloader, prefetch_size=prefetch_factor,
-        torch_device=torch_device, jax_device=jax_device
-    )
-
-    return dataloader, ds, dataloader_len
+        worker_init_fn=_worker_init_fn
+    ), ds
