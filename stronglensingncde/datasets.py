@@ -473,7 +473,7 @@ def make_jax_prefetched_loader(
                 torch_batch, torch_device=torch_device, jax_device=jax_device
             )
 
-    return prefetch_to_device(gen(), size=prefetch_size)
+    return gen()
 
 def make_dataloader(
     h5_path: str,
