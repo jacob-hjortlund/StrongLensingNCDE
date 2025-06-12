@@ -447,24 +447,30 @@ def create_subset(dataset, max_size=None, seed=42):
     
     return subset
 
-def torch_to_jax(batch):
+def torch_to_jax(batch, torch_device, jax_device):
 
     jax_batch = []
     for item in batch:
-        cuda_item = item.to(non_blocking=True)
+        cuda_item = item.to(torch_device, non_blocking=True)
         dl = to_dlpack(cuda_item)
-        jax_arr = from_dlpack(dl)
+        jax_arr = from_dlpack(jax_device, dl)
         jax_batch.append(jax_arr)
 
     return jax_batch
 
-def make_jax_prefetched_loader(torch_loader, prefetch_size=2):
+def make_jax_prefetched_loader(
+    torch_loader, prefetch_size=2,
+    torch_device=torch.device('cuda:0'),
+    jax_device=jax.devices('gpu')[0]
+):
     """
     Wraps the PyTorch loader and DLPack conversion into a prefetching JAX iterator.
     """
     def gen():
         for torch_batch in torch_loader:
-            yield torch_to_jax(torch_batch)
+            yield torch_to_jax(
+                torch_batch, torch_device=torch_device, jax_device=jax_device
+            )
 
     return prefetch_to_device(gen(), size=prefetch_size)
 
@@ -517,6 +523,12 @@ def make_dataloader(
     )
     dataloader_len = len(dataloader)
 
-    dataloader = make_jax_prefetched_loader(dataloader, prefetch_size=prefetch_factor)
+    torch_device = torch.device('cuda:0')
+    jax_device = jax.devices('gpu')[0]
+
+    dataloader = make_jax_prefetched_loader(
+        dataloader, prefetch_size=prefetch_factor,
+        torch_device=torch_device, jax_device=jax_device
+    )
 
     return dataloader, ds, dataloader_len
