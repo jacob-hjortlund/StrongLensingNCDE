@@ -7,7 +7,7 @@ from jaxtyping import ArrayLike
 from collections.abc import Callable
 from jax.scipy.special import logsumexp
 
-def temporal_cross_entropy_loss(logits, label, scale=1.0, **kwargs):
+def temporal_cross_entropy_loss(logits, label, representation, covariance, scale=1.0, **kwargs):
 
     log_probs = jax.nn.log_softmax(logits, axis=-1)
     log_prob_true = log_probs[:, label]
@@ -17,7 +17,7 @@ def temporal_cross_entropy_loss(logits, label, scale=1.0, **kwargs):
 
 def focalize_loss_fn(loss_fn: Callable, gamma: float = 1.0, **kwargs) -> Callable:
 
-    def new_loss_fn(logits, label, scale=1.0, **kwargs):
+    def new_loss_fn(logits, label, representation, covariance, scale=1.0, **kwargs):
 
         probs = jax.nn.softmax(logits, axis=-1)
         prob_true = probs[:, label]
@@ -31,7 +31,7 @@ def focalize_loss_fn(loss_fn: Callable, gamma: float = 1.0, **kwargs) -> Callabl
 
 def dual_focalize_loss_fn(loss_fn: Callable, gamma: float = 1.0, **kwargs) -> Callable:
 
-    def new_loss_fn(logits, label, scale=1.0, **kwargs):
+    def new_loss_fn(logits, label, representation, covariance, scale=1.0, **kwargs):
 
         probs = jax.nn.softmax(logits, axis=-1)
         masked_probs = probs.at[:, label].set(-1.0)
@@ -49,7 +49,7 @@ def dual_focalize_loss_fn(loss_fn: Callable, gamma: float = 1.0, **kwargs) -> Ca
 
 def class_weight_loss_fn(loss_fn: Callable, class_weights: ArrayLike, **kwargs) -> Callable:
 
-    def new_loss_fn(logits, label, scale=1.0, **kwargs):
+    def new_loss_fn(logits, label, representation, covariance, scale=1.0, **kwargs):
 
         class_weight = class_weights[label]
         loss = class_weight * loss_fn(logits, label, scale, **kwargs)
@@ -58,66 +58,74 @@ def class_weight_loss_fn(loss_fn: Callable, class_weights: ArrayLike, **kwargs) 
     
     return new_loss_fn
 
-def temporal_hinge_loss(
-    logits, label,
-    hinge_class_frequencies,
-    hinge_margin=0.0, 
-    scale=1.0, **kwargs
-):
+def unit_weight_fn(times, t_peak, logits, label, **kwargs):
+    return jnp.ones_like(times)
 
-    # logits: array of shape (T, N)
-    T, N = logits.shape
+def _stable_focal_weight(p, gamma=1.0, eps=1e-20):
 
-    # 1) find the hard prediction at each epoch
-    #    (argsort of -logits gives descending order)
-    sorted_preds = jnp.argsort(-logits, axis=-1)   # shape (T, N)
-    preds        = sorted_preds[:, 0]              # shape (T,)
+    log_one_minus_p = jnp.log1p(-p)
+    log_w = gamma * log_one_minus_p
+    log_S = logsumexp(log_w)
+    focal_weight = jnp.clip(
+        jnp.exp(log_w - log_S),
+        min=eps,
+        max=1.0-eps
+    )
 
-    # 2) build a time index [0,1,…,T-1]
-    t = jnp.arange(T)
+    return focal_weight
 
-    # 3) logits_prev: for t=1..T-1, grab logits[t, preds[t-1]]
-    logits_prev = logits[t[1:], preds[:-1]]        # shape (T-1,)
+def focal_weight_fn(times, t_peak, logits, label, gamma=1.0, eps=1e-20, **kwargs):
 
-    # 4) to get max_excl_prev, mask out preds[t-1] at each t
-    prev_preds   = preds[:-1]                      # shape (T-1,)
-    logits_next  = logits[1:]                      # shape (T-1, N)
-    mask         = jax.nn.one_hot(prev_preds, N, dtype=bool)  # True where j == preds[t-1]
-
-    # 5) compute per‐row minima
-    row_min = jnp.min(logits_next, axis=1, keepdims=True)   # (T-1, 1)
-
-    # 6) replacement value = one less than the row minimum
-    replacement = row_min - 1.0                             # (T-1, 1)
-
-    # 7) mask‐and‐replace
-    #    broadcasting replacement across the N columns
-    masked_logits = jnp.where(mask, replacement, logits_next)  # (T-1, N)
-
-    # then take the max over axis=1
-    max_excl_prev = jnp.max(masked_logits, axis=1)
-
-    # 8) compute the hinge loss
-
-    # Update hinge_scale based on the frequency of the label
-    alpha = scale / hinge_class_frequencies[label]
     
+    probs = jax.nn.softmax(logits, axis=-1)
+    p_true = jnp.clip(probs[:, label], min=eps, max=1.0-eps)
+    focal_weight = _stable_focal_weight(p_true, gamma, eps)
 
-    loss = alpha * jnp.maximum(0., max_excl_prev - logits_prev + hinge_margin)
-    loss = jnp.concatenate([jnp.zeros((1,)), loss])  # shape (T,)
+    return focal_weight
 
-    return loss
+def dual_focal_weight_fn(times, t_peak, logits, label, gamma=1.0, **kwargs):
 
-def temporal_cumulative_cross_entropy_loss(logits, label, scale, **kwargs):
+    probs = jax.nn.softmax(logits, axis=-1)
+    masked_probs = probs.at[:, label].set(-1.0)
+    
+    p_true = probs[:, label]
+    p_next = jnp.max(masked_probs, axis=-1)
+    p_diff = jnp.clip(p_true - p_next, min=0., max=1.0)
+    focal_weight = _stable_focal_weight(p_diff, gamma)
 
-    counts = jnp.arange(1, logits.shape[0]+1)[:, None]
-    cumulative_avg_logits = jnp.cumsum(logits, axis=0) / counts
-    loss = temporal_cross_entropy_loss(cumulative_avg_logits, label, scale, **kwargs)
+    return focal_weight
 
-    return loss
+def batch_covariance(representations, valid_lightcurve_masks, lengths):
+    expanded_lc_mask = valid_lightcurve_masks[:, :, None, None]
+    lc_mask = jnp.broadcast_to(
+        expanded_lc_mask, representations.shape
+    )
+
+    indeces = jnp.arange(representations.shape[2])
+    indeces = jnp.tile(indeces[None, :], (representations.shape[0], 1))
+    length_mask = indeces < lengths[:, None]
+    length_mask = jnp.broadcast_to(length_mask[:, None, :, None], representations.shape)
+
+    mask = jnp.logical_and(lc_mask, length_mask)
+
+    cov = jnp.std(representations, ddof=1, where=mask, axis=(0,1,2))**2
+
+    return cov
+
+def lightcurve_representation_distance(
+    logits, label, representations, cov, scale=1.0, **kwargs
+):
+    
+    dr = jnp.diff(representations, axis=0)
+    dm = scale * jnp.sqrt(jnp.sum(dr**2/cov, axis=-1))
+    dm = jnp.concatenate(
+        (jnp.zeros(1), dm)
+    )
+
+    return dm
 
 def temporal_predictions(
-    logits, label, **kwargs
+    logits, label, representations, covariance, **kwargs
 ):
     
     pred_check = jnp.argmax(logits, axis=-1) == label
@@ -327,66 +335,6 @@ def batch_number_of_transitions(logits, lengths, trigger_idx, valid_lightcurve_m
 
     return jnp.nanmedian(masked_num_transitions)
 
-def unit_weight_fn(times, t_peak, logits, label, **kwargs):
-    return jnp.ones_like(times)
-
-def _stable_focal_weight(p, gamma=1.0, eps=1e-20):
-
-    log_one_minus_p = jnp.log1p(-p)
-    log_w = gamma * log_one_minus_p
-    log_S = logsumexp(log_w)
-    focal_weight = jnp.clip(
-        jnp.exp(log_w - log_S),
-        min=eps,
-        max=1.0-eps
-    )
-
-    return focal_weight
-
-def focal_weight_fn(times, t_peak, logits, label, gamma=1.0, eps=1e-20, **kwargs):
-
-    
-    probs = jax.nn.softmax(logits, axis=-1)
-    p_true = jnp.clip(probs[:, label], min=eps, max=1.0-eps)
-    focal_weight = _stable_focal_weight(p_true, gamma, eps)
-
-    return focal_weight
-
-def dual_focal_weight_fn(times, t_peak, logits, label, gamma=1.0, **kwargs):
-
-    probs = jax.nn.softmax(logits, axis=-1)
-    masked_probs = probs.at[:, label].set(-1.0)
-    
-    p_true = probs[:, label]
-    p_next = jnp.max(masked_probs, axis=-1)
-    p_diff = jnp.clip(p_true - p_next, min=0., max=1.0)
-    focal_weight = _stable_focal_weight(p_diff, gamma)
-
-    return focal_weight
-
-def weight_warmup_wrapper(weight_fn, num_warmup):
-
-    _unit_weight_fn = lambda operand: unit_weight_fn(
-        operand[0], operand[1], operand[2],
-        operand[3], **operand[4]
-    )
-
-    _weight_fn = lambda operand: weight_fn(
-        operand[0], operand[1], operand[2],
-        operand[3], **operand[4]
-    )
-
-    def weight_fn(step, operands):
-
-        weights = jax.lax.cond(
-            step < num_warmup,
-            _unit_weight_fn,
-            _weight_fn,
-            operands
-        )
-
-        return weights
-
 def make_masked_timeseries_loss_fn(
     loss_fn: callable,
     loss_fn_kwargs: dict,
@@ -414,6 +362,8 @@ def make_masked_timeseries_loss_fn(
         length: int,
         times: jnp.ndarray,
         t_peak: float,
+        representations: jnp.ndarray,
+        covariance: jnp.ndarray
     ):
         """
         Args:
@@ -425,7 +375,7 @@ def make_masked_timeseries_loss_fn(
             t_peak (float): Peak time of the time series, input to temporal_weight_fn.
         """
 
-        _loss = loss_fn(logits, label, **loss_fn_kwargs)
+        _loss = loss_fn(logits, label, representations, covariance, **loss_fn_kwargs)
         _weights = temporal_weight_fn(times, t_peak, logits, label, **temporal_weight_kwargs)
 
         indeces = jnp.arange(_loss.shape[-1])
@@ -473,16 +423,18 @@ def make_batch_loss_fn(
         times,
         peak_times,
         valid_lightcurve_mask,
+        representations,
+        covariance,
     ):
         
         image_mapped_ts_loss_fn = jax.vmap(
             ts_loss_fn,
-            in_axes=(0, 0, None, None, None, 0)
+            in_axes=(0, 0, None, None, None, 0, 0, None)
         )
 
         batch_mapped_ts_loss_fn = jax.vmap(
             image_mapped_ts_loss_fn,
-            in_axes=(0, 0, 0, 0, 0, 0)
+            in_axes=(0, 0, 0, 0, 0, 0, 0, None)
         )
 
         batch_image_ts_loss = batch_mapped_ts_loss_fn(
@@ -491,7 +443,9 @@ def make_batch_loss_fn(
             trigger_indices,
             lengths,
             times,
-            peak_times
+            peak_times,
+            representations,
+            covariance
         )   # (N_batch, N_max_img)
 
         avg_batch_loss = jnp.sum(
@@ -612,10 +566,14 @@ def make_loss_and_metric_fn(
         valid_lightcurve_mask: jnp.ndarray,
     ):
         
-        logits = jax.vmap(
+        logits, representations = jax.vmap(
             model, in_axes=(0, 0, 0, 0, 0)
         )(s, interp_s, interp_ts, max_s, valid_lightcurve_mask)    # (N_batch, N_max_img, max_length, num_classes)
         
+        covariance = batch_covariance(
+            representations, valid_lightcurve_mask, lengths
+        )
+
         losses = jnp.array(
             [
                 _loss_fn(
@@ -625,7 +583,9 @@ def make_loss_and_metric_fn(
                     lengths,
                     times,
                     peak_times,
-                    valid_lightcurve_mask
+                    valid_lightcurve_mask,
+                    representations,
+                    covariance
                 ) for _loss_fn in batch_loss_fns
             ]
         )
@@ -640,7 +600,9 @@ def make_loss_and_metric_fn(
                     lengths,
                     times,
                     peak_times,
-                    valid_lightcurve_mask
+                    valid_lightcurve_mask,
+                    representations,
+                    covariance
                 ) for _metric_fn in batch_metric_fns
             ]
         )

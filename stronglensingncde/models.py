@@ -241,4 +241,4 @@ class PoolingONCDEClassifier(eqx.Module):
 
         logits = jax.vmap(jax.vmap(self.classifier))(contextualized_representations)   # (N_max_img, max_length, num_classes)
         
-        return logits
+        return logits, contextualized_representations
