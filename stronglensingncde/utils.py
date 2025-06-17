@@ -162,7 +162,8 @@ def make_model(*, key, model_class, hyperparams):
             'weight_init_fn', 'identity'
         )
     ]
-    custom_init_model = init_linear_weight(model, init_fn, init_key)
+    custom_init_ncde = init_linear_weight(model.ncde, init_fn, init_key)
+    custom_init_model = eqx.tree_at(lambda m: m.ncde, model, custom_init_ncde)
 
     return custom_init_model
 
