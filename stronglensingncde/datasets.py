@@ -125,7 +125,9 @@ class HDF5TimeSeriesDataset(Dataset):
 
             for sample_key in all_keys:
 
-                n_obs = len(f[sample_key]['TRANS_MJD'])
+                #n_obs = len(f[sample_key]['TRANS_MJD'])
+                mjd = f[sample_key]['TRANS_MJD'][()]
+                n_obs = np.sum(mjd >= 0)
                 if n_obs < 2:
                     n_obs_filtered_count += 1
                     continue
