@@ -75,7 +75,7 @@ model:
   class: PoolingONCDEClassifier
   hyperparams:
     input_feature_size: 33
-    representation_size: 8
+    representation_size: 64
     ncde_width: 128
     ncde_depth: 4
     ncde_solver: Tsit5     # you can still pass these as strings…
