@@ -10,6 +10,20 @@ import jax.random as jr
 from collections.abc import Callable
 from jaxtyping import Array, PRNGKeyArray
 
+def _apply_weight_norm(x):
+    if isinstance(x, eqx.nn.Linear):
+        x = eqx.nn.WeightNorm(x)
+    return x
+
+def apply_WeightNorm(model):
+
+    is_linear = lambda x: isinstance(x, eqx.nn.Linear)
+    output_model = jax.tree_map(
+        _apply_weight_norm, model, is_leaf=is_linear
+    )
+
+    return output_model
+
 class SamplingWeights(eqx.Module):
     logits: Array
 
@@ -34,6 +48,7 @@ class VectorField(eqx.Module):
         depth,
         activation=jnn.softplus,
         final_activation=jnn.tanh,
+        weight_norm=False,
         *,
         key,
         **kwargs
@@ -41,19 +56,17 @@ class VectorField(eqx.Module):
         super().__init__(**kwargs)
         self.data_size = data_size
         self.hidden_size = hidden_size
-        self.mlp = eqx.nn.WeightNorm(
-            eqx.nn.MLP(
-                in_size=hidden_size,
-                out_size=hidden_size * data_size,
-                width_size=width_size,
-                depth=depth,
-                activation=activation,
-                # Note the use of a tanh final activation function. This is important to
-                # stop the model blowing up. (Just like how GRUs and LSTMs constrain the
-                # rate of change of their hidden states.)
-                final_activation=final_activation,
-                key=key,
-            )
+        self.mlp = eqx.nn.MLP(
+            in_size=hidden_size,
+            out_size=hidden_size * data_size,
+            width_size=width_size,
+            depth=depth,
+            activation=activation,
+            # Note the use of a tanh final activation function. This is important to
+            # stop the model blowing up. (Just like how GRUs and LSTMs constrain the
+            # rate of change of their hidden states.)
+            final_activation=final_activation,
+            key=key,
         )
 
     def __call__(self, t, y, args):
@@ -80,13 +93,14 @@ class OnlineNCDE(eqx.Module):
         rtol=1e-3,
         atol=1e-6,
         activation=jnn.softplus,
+        weight_norm=False,
         *,
         key,
         **kwargs
     ):
         super().__init__()
         ikey, fkey, lkey = jr.split(key, 3)
-        self.initial = eqx.nn.MLP(
+        initial = eqx.nn.MLP(
             data_size,
             hidden_size,
             width_size,
@@ -94,7 +108,7 @@ class OnlineNCDE(eqx.Module):
             key=ikey,
             activation=activation,
         )
-        self.vector_field = VectorField(
+        vector_field = VectorField(
             data_size,
             hidden_size,
             width_size,
@@ -102,6 +116,12 @@ class OnlineNCDE(eqx.Module):
             key=fkey,
             activation=activation,
         )
+        if weight_norm:
+            initial = apply_WeightNorm(initial)
+            vector_field = apply_WeightNorm(vector_field)
+        
+        self.initial = initial
+        self.vector_field = vector_field
         self.solver = solver
         self.adjoint = adjoint
         self.max_steps = max_steps
@@ -166,6 +186,7 @@ class PoolingONCDEClassifier(eqx.Module):
         num_classes: int,
         ncde_activation: Callable | str = jnn.softplus,
         classifier_activation: Callable | str = jnn.leaky_relu,
+        ncde_weight_norm: bool = False,
         *,
         key,
         **kwargs
@@ -213,6 +234,7 @@ class PoolingONCDEClassifier(eqx.Module):
             atol=ncde_atol,
             key=ncde_key,
             activation=ncde_activation,
+            weight_norm=ncde_weight_norm
         )
 
         self.classifier = eqx.nn.MLP(

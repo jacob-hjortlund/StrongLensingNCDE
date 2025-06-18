@@ -88,6 +88,7 @@ model:
     num_classes: 11
     ncde_rtol: 1e-3
     ncde_atol: 1e-3
+    ncde_weight_norm: False
     weight_init_fn: identity
 
 range_finding:
