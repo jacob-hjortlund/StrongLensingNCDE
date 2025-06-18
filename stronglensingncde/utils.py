@@ -85,20 +85,6 @@ def inspect_gradients(
     )
     s = s[:,0,:]
     
-    max_s = max_times #+ (lengths-1) / 1000
-    _, _ = loss_fn(
-        model,
-        times,
-        s, 
-        max_s,
-        interp_s,
-        interp_ts,
-        trigger_idx,
-        lengths,
-        multiclass_labels,
-        peak_times,
-        valid_lightcurve_mask
-    )
     (loss, aux), grads = func(model, data)
 
     flat_grads, grad_tree = jax.tree_util.tree_flatten(grads)
@@ -126,6 +112,8 @@ def inspect_gradients(
             print(f"\n{name.strip()}: No gradient (None)")
     
     print(" ")
+
+    return loss, aux, grads
 
 def identity(x, *args, **kwargs):
     
