@@ -41,17 +41,19 @@ class VectorField(eqx.Module):
         super().__init__(**kwargs)
         self.data_size = data_size
         self.hidden_size = hidden_size
-        self.mlp = eqx.nn.MLP(
-            in_size=hidden_size,
-            out_size=hidden_size * data_size,
-            width_size=width_size,
-            depth=depth,
-            activation=activation,
-            # Note the use of a tanh final activation function. This is important to
-            # stop the model blowing up. (Just like how GRUs and LSTMs constrain the
-            # rate of change of their hidden states.)
-            final_activation=final_activation,
-            key=key,
+        self.mlp = eqx.nn.WeightNorm(
+            eqx.nn.MLP(
+                in_size=hidden_size,
+                out_size=hidden_size * data_size,
+                width_size=width_size,
+                depth=depth,
+                activation=activation,
+                # Note the use of a tanh final activation function. This is important to
+                # stop the model blowing up. (Just like how GRUs and LSTMs constrain the
+                # rate of change of their hidden states.)
+                final_activation=final_activation,
+                key=key,
+            )
         )
 
     def __call__(self, t, y, args):
