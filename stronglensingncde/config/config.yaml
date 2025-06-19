@@ -25,6 +25,7 @@ training:
   loss_settings:
     loss_components:
       - temporal_cross_entropy_loss
+    loss_scales: [1.0]
     loss_modifiers: null
     loss_modifier_kwargs:
       class_weights:
