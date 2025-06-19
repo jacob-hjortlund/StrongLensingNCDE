@@ -117,9 +117,9 @@ def lightcurve_representation_distance(
 ):
     
     dr = jnp.diff(representations, axis=0)
-    dm = scale * jnp.sqrt(jnp.sum(dr**2/cov, axis=-1) + 1e-6)
+    dm = scale * jnp.sqrt(jnp.sum(dr**2/cov, axis=-1) + 1e-20)
     dm = jnp.concatenate(
-        (jnp.ones(1)*1e-3, dm)
+        (jnp.ones(1)*1e-10, dm)
     )
 
     return dm
