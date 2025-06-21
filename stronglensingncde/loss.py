@@ -108,7 +108,7 @@ def batch_covariance(representations, valid_lightcurve_masks, lengths):
 
     mask = jnp.logical_and(lc_mask, length_mask)
 
-    cov = jnp.std(representations, ddof=1, where=mask, axis=(0,1,2))**2
+    cov = jnp.std(representations, ddof=1, where=mask, axis=(0,1,2))**2 + 1e-12
 
     return cov
 
@@ -117,9 +117,9 @@ def lightcurve_representation_distance(
 ):
     
     dr = jnp.diff(representations, axis=0)
-    dm = scale * jnp.sqrt(jnp.sum(dr**2/cov, axis=-1) + 1e-6)
+    dm = scale * jnp.sum(dr**2/cov, axis=-1)
     dm = jnp.concatenate(
-        (jnp.ones(1)*1e-3, dm)
+        (jnp.zeros(1), dm)
     )
 
     return dm
