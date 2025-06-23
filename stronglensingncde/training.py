@@ -130,7 +130,7 @@ def make_train_step(optimizer, loss_fn):
         )
         model = eqx.apply_updates(model, updates)
 
-        return loss, aux, model, optimizer_state
+        return loss, aux, model, optimizer_state, gradients
     
     return train_step
 
@@ -167,7 +167,7 @@ def make_val_step(loss_fn):
             valid_lightcurve_mask
         )
         
-        return loss, aux, model, optimizer_state
+        return loss, aux, model, optimizer_state, None
     
     return val_step
 
@@ -179,7 +179,7 @@ def inner_loop(
     fixed_lr = None,
     number_of_steps = None,
     verbose = False,
-    meta_dataloader=None,
+    exception_path = None,
 ):
     
     if not number_of_steps:
@@ -195,20 +195,74 @@ def inner_loop(
     t_init = time.time()
     for step in range(number_of_steps):
         
+        t_step_init = time.time()
+
         if fixed_lr is None:
             current_lr = optimizer_state[1].inner_state.hyperparams['learning_rate']
         else:
             current_lr = fixed_lr
-            
+
+        grads_contain_inf = False
+        grads_contain_nan = False
+
         data = next(dataloader)
         data = [output.numpy() for output in data]
         
-        t_step_init = time.time()
-        loss, aux, model, optimizer_state = step_fn(
+        loss, aux, model, optimizer_state, gradients = step_fn(
             model, data, optimizer_state
         )
-        step_duration = time.time() - t_step_init
-        
+        if not isinstance(gradients, type(None)):
+            grads_contain_inf = utils.tree_contains_inf(gradients)
+            grads_contain_nan = utils.tree_contains_nan(gradients)
+
+        invalid_grads = grads_contain_inf | grads_contain_nan
+
+        if invalid_grads:
+
+            if exception_path:
+                exception_path = exception_path / 'exception'
+                exception_path.mkdir(parents=True, exist_ok=True)
+
+                names = (
+                    "times", "flux", "partial_ts", "trigger_idx",
+                    "lengths", "peak_times", "max_times", 
+                    "binary_labels", "multiclass_labels",
+                    "valid_lightcurve_mask"
+                )
+
+                for arr, name in zip(data, names):
+                    np.save(exception_path / f"{name}.npy", arr)
+
+                for arr, name in zip(aux, [losses, metrics]):
+                    np.save(exception_path / f"{name}.npy", arr)
+
+            exception_string = (
+                "Gradients are invalid. They contain:\n" +
+                f"Infs: {grads_contain_inf}\n" +
+                f"NaNs: {grads_contain_nan}\n" 
+            )
+
+            if exception_path:
+                exception_path = exception_path / 'exception'
+                exception_path.mkdir(parents=True, exist_ok=True)
+
+                names = (
+                    "times", "flux", "partial_ts", "trigger_idx",
+                    "lengths", "peak_times", "max_times", 
+                    "binary_labels", "multiclass_labels",
+                    "valid_lightcurve_mask"
+                )
+
+                for arr, name in zip(data, names):
+                    np.save(exception_path / f"{name}.npy", arr)
+
+                for arr, name in zip(aux, [losses, metrics]):
+                    np.save(exception_path / f"{name}.npy", arr)
+
+                exception_string += f"Metadata has been saved to:\n{exception_path}"   
+
+            raise ValueError(exception_string)
+
         total_loss += loss
         step_losses = aux[0]
         step_metrics = aux[1]
@@ -216,6 +270,8 @@ def inner_loop(
         metrics.append(step_metrics)
         lrs.append(current_lr)
         
+        step_duration = time.time() - t_step_init
+
         # TODO: Replace with function that handles aux
         if verbose:
 
@@ -244,10 +300,7 @@ def inner_loop(
         
         aux_vals.append(aux)
     
-    total_time = time.time() - t_init
-    avg_step_time = total_time / number_of_steps
     avg_loss = total_loss / number_of_steps
-    
     losses = np.array(losses)
     metrics = np.array(metrics)
     lrs = np.array(lrs)
@@ -256,6 +309,9 @@ def inner_loop(
     avg_losses = np.mean(np.array(losses), axis=0)
     init_lr, final_lr = lrs[0], lrs[-1]
     
+    total_time = time.time() - t_init
+    avg_step_time = total_time / number_of_steps
+
     aux_vals = (
         avg_losses, avg_metrics, avg_step_time,
         losses, (init_lr, final_lr), metrics
@@ -286,6 +342,7 @@ def training_loop(
     
     total_number_of_epochs = number_of_epochs + number_of_warmup_epochs
     if save_path:
+
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
 
@@ -347,6 +404,7 @@ def training_loop(
             step_fn=train_step,
             number_of_steps=steps_per_epoch,
             verbose=verbose_steps,
+            exception_path=save_path,
         )
         last_train_lr = train_aux[4][-1]
 
