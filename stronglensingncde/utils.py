@@ -14,6 +14,24 @@ from tqdm import trange
 from jaxtyping import Array
 from collections.abc import Callable
 
+@jax.jit
+def tree_contains_inf(tree):
+
+    isInf = jax.tree_util.tree_map(jnp.isinf, tree)
+    isInf = jax.tree_util.tree_reduce(jnp.add, isInf, initializer=0.)
+    isInf = isInf.astype(jnp.bool) 
+    
+    return isInf
+
+@jax.jit
+def tree_contains_nan(tree):
+
+    isNaN = jax.tree_util.tree_map(jnp.isnan, tree)
+    isNaN = jax.tree_util.tree_reduce(jnp.add, isNaN, initializer=0.)
+    isNaN = isNaN.astype(jnp.bool)
+
+    return isNaN
+
 def inspect_gradients(
     model: eqx.Module,
     loss_fn: Callable[[eqx.Module, Any], Array],
@@ -72,18 +90,6 @@ def inspect_gradients(
         )
 
         return (loss, aux), grads
-    
-    (
-        times, flux, partial_ts, trigger_idx,
-        lengths, peak_times, max_times, 
-        binary_labels, multiclass_labels,
-        valid_lightcurve_mask
-    ) = data
-
-    s, interp_s, interp_ts = training.batch_mapped_interpolate_timeseries(
-        times, flux, partial_ts
-    )
-    s = s[:,0,:]
     
     (loss, aux), grads = func(model, data)
 
