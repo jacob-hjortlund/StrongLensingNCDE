@@ -211,11 +211,16 @@ def inner_loop(
         loss, aux, model, optimizer_state, gradients = step_fn(
             model, data, optimizer_state
         )
-        if not isinstance(gradients, type(None)):
+        has_gradients = not isinstance(gradients, type(None))
+        if has_gradients:
             grads_contain_inf = utils.tree_contains_inf(gradients)
             grads_contain_nan = utils.tree_contains_nan(gradients)
 
         invalid_grads = grads_contain_inf | grads_contain_nan
+        print("Has gradients: ", has_gradients)
+        print("Contain inf: ", grads_contain_inf)
+        print("Contain NaN: ", grads_contain_nan)
+        print("Invalid grads: ", invalid_grads)
 
         if invalid_grads:
 
