@@ -18,7 +18,7 @@ def _apply_weight_norm(x):
 def apply_WeightNorm(model):
 
     is_linear = lambda x: isinstance(x, eqx.nn.Linear)
-    output_model = jax.tree_map(
+    output_model = jax.tree_util.tree_map(
         _apply_weight_norm, model, is_leaf=is_linear
     )
 
