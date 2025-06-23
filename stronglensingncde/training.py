@@ -217,12 +217,10 @@ def inner_loop(
             grads_contain_nan = utils.tree_contains_nan(gradients)
 
         invalid_grads = grads_contain_inf | grads_contain_nan
-        print("Has gradients: ", has_gradients)
-        print("Contain inf: ", grads_contain_inf)
-        print("Contain NaN: ", grads_contain_nan)
-        print("Invalid grads: ", invalid_grads)
+        loss_is_invalid = jnp.isfinite(loss)
+        loss_or_grads_invalid = invalid_grads | loss_is_invalid
 
-        if invalid_grads:
+        if loss_or_grads_invalid:
 
             if exception_path:
                 exception_path = exception_path / 'exception'
@@ -242,9 +240,10 @@ def inner_loop(
                     np.save(exception_path / f"{name}.npy", arr)
 
             exception_string = (
-                "Gradients are invalid. They contain:\n" +
+                "Gradients or loss is invalid. They contain:\n" +
                 f"Infs: {grads_contain_inf}\n" +
-                f"NaNs: {grads_contain_nan}\n" 
+                f"NaNs: {grads_contain_nan}\n" +
+                f"Loss: {loss_is_invalid}\n" 
             )
 
             if exception_path:
@@ -263,6 +262,9 @@ def inner_loop(
 
                 for arr, name in zip(aux, [losses, metrics]):
                     np.save(exception_path / f"{name}.npy", arr)
+
+                utils.save_model(exception_path / "model_at_failure.eqx", model)
+                utils.save_model(exception_path / "grads_at_failure.eqx", gradients)
 
                 exception_string += f"Metadata has been saved to:\n{exception_path}"   
 
