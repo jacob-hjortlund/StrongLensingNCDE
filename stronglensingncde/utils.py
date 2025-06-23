@@ -17,8 +17,7 @@ from collections.abc import Callable
 @jax.jit
 def tree_contains_inf(tree):
 
-    tree = jax.tree_util.tree_map(jnp.ravel, tree)
-    isInf = jax.tree_util.tree_map(jnp.isinf, tree)
+    isInf = jax.tree_util.tree_map(lambda x: jnp.any(jnp.isinf(x)), tree)
     isInf = jax.tree_util.tree_reduce(jnp.add, isInf, initializer=0.)
     isInf = isInf.astype(jnp.bool) 
     
@@ -27,8 +26,7 @@ def tree_contains_inf(tree):
 @jax.jit
 def tree_contains_nan(tree):
 
-    tree = jax.tree_util.tree_map(jnp.ravel, tree)
-    isNaN = jax.tree_util.tree_map(jnp.isnan, tree)
+    isNaN = jax.tree_util.tree_map(lambda x: jnp.any(jnp.isinf(x)), tree)
     isNaN = jax.tree_util.tree_reduce(jnp.add, isNaN, initializer=0.)
     isNaN = isNaN.astype(jnp.bool)
 

@@ -420,6 +420,7 @@ def training_loop(
             step_fn=val_step,
             number_of_steps=val_steps_per_epoch,
             verbose=verbose_steps,
+            exception_path=None,
         )
 
         epoch_duration = time.time() - t_epoch_init
