@@ -217,7 +217,7 @@ def inner_loop(
             grads_contain_nan = utils.tree_contains_nan(gradients)
 
         invalid_grads = grads_contain_inf | grads_contain_nan
-        loss_is_invalid = jnp.isfinite(loss)
+        loss_is_invalid = ~jnp.isfinite(loss)
         loss_or_grads_invalid = invalid_grads | loss_is_invalid
 
         print("Loss is not finite: ", loss_is_invalid, loss)
@@ -271,6 +271,7 @@ def inner_loop(
 
                 exception_string += f"Metadata has been saved to:\n{exception_path}"   
 
+            print(exception_string)
             raise ValueError(exception_string)
 
         total_loss += loss
