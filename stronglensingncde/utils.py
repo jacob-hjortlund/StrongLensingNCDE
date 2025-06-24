@@ -32,32 +32,7 @@ def tree_contains_nan(tree):
 
     return isNaN
 
-def inspect_gradients(
-    model: eqx.Module,
-    loss_fn: Callable[[eqx.Module, Any], Array],
-    data: Any
-) -> None:
-    """
-    Inspects and prints gradient statistics for each parameter of an Equinox model.
-
-    Parameters:
-    ----------
-    model : eqx.Module
-        The Equinox model whose gradients you want to inspect.
-    loss_fn : Callable
-        Loss function taking (model, data) and returning a scalar loss.
-    data : Any
-        Data passed to the loss function (e.g., batch input/target).
-
-    Prints:
-    ------
-    For each parameter, prints:
-        - Parameter name
-        - Gradient mean
-        - Gradient std deviation
-        - Gradient norm
-        - Presence of NaNs or infinite values
-    """
+def make_evalf_fn(loss_fn):
     @eqx.filter_jit
     def func(model, data):
         (
@@ -90,8 +65,37 @@ def inspect_gradients(
         )
 
         return (loss, aux), grads
+
+    return func
+
+def inspect_gradients(
+    model: eqx.Module,
+    evalf_fn,
+    data: Any
+) -> None:
+    """
+    Inspects and prints gradient statistics for each parameter of an Equinox model.
+
+    Parameters:
+    ----------
+    model : eqx.Module
+        The Equinox model whose gradients you want to inspect.
+    loss_fn : Callable
+        Loss function taking (model, data) and returning a scalar loss.
+    data : Any
+        Data passed to the loss function (e.g., batch input/target).
+
+    Prints:
+    ------
+    For each parameter, prints:
+        - Parameter name
+        - Gradient mean
+        - Gradient std deviation
+        - Gradient norm
+        - Presence of NaNs or infinite values
+    """
     
-    (loss, aux), grads = func(model, data)
+    (loss, aux), grads = evalf_fn(model, data)
 
     flat_grads, grad_tree = jax.tree_util.tree_flatten(grads)
     flat_names = eqx.tree_pformat(grads).splitlines()
