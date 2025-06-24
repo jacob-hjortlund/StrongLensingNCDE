@@ -220,9 +220,6 @@ def inner_loop(
         loss_is_invalid = ~jnp.isfinite(loss)
         loss_or_grads_invalid = invalid_grads | loss_is_invalid
 
-        print("Loss is not finite: ", loss_is_invalid, loss)
-        print("Invalid grads: ", invalid_grads)
-
         if loss_or_grads_invalid:
 
             if exception_path:
