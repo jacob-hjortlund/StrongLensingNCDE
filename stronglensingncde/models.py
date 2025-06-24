@@ -147,7 +147,7 @@ class OnlineNCDE(eqx.Module):
             dt0,
             y0,
             stepsize_controller=diffrax.PIDController(
-                rtol=self.rtol, atol=self.atol#, jump_ts=ts
+                rtol=self.rtol, atol=self.atol, jump_ts=ts
             ),
             saveat=saveat,
             adjoint=self.adjoint,
