@@ -69,6 +69,8 @@ class HDF5TimeSeriesDataset(Dataset):
         seed: int = 42,
         classes: list[str] = None,
         verbose: bool = True,
+        min_num_detections: int = 2,
+        min_num_observations: int = 2,
         **kwargs
     ):
         
@@ -126,10 +128,16 @@ class HDF5TimeSeriesDataset(Dataset):
             for sample_key in all_keys:
 
                 detobs = f[sample_key]['DETOBS'][()]
+                t = f[sample_key]['TRANS_MJD'][()]
+                n_obs = np.sum(t >= 0)
+                is_below_min_num_obs = n_obs < min_num_observations
+
                 dets = detobs[..., :6]
                 n_dets = np.sum(dets, axis=(1,2))
-                is_below = np.all(n_dets < 2)
-                if is_below:
+                is_below_min_num_dets = np.all(n_dets < min_num_detections)
+                
+                discard_light_curve = is_below_min_num_dets or is_below_min_num_obs
+                if discard_light_curve:
                     n_obs_filtered_count += 1
                     continue
 
