@@ -35,13 +35,13 @@ def _interpolate_timeseries(times, flux, partial_ts):
     )
     colors = -jnp.diff(flux_rect, axis=-1)
     
-    _, partial_rect = diffrax.rectilinear_interpolation(
+    s_rect, partial_rect = diffrax.rectilinear_interpolation(
         times, partial_ts, replace_nans_at_start=0.
     )
 
 
     s = times
-    s_rect = interleave_with_avg(times)
+    #s_rect = interleave_with_avg(times)
 
     obs_rect = jnp.concatenate([s_rect[:, None], flux_rect, colors, partial_rect], axis=-1)
 
