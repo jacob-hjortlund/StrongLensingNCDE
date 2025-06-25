@@ -150,6 +150,13 @@ def init_linear_weight(model, init_fn, key):
   new_model = eqx.tree_at(get_weights, model, new_weights)
   return new_model
 
+def change_dtype(model, dtype):
+
+    func = lambda x: x.astype(dtype) if eqx.is_array(x) else x
+    new_model = jax.tree_util.tree_map(func, model)
+
+    return new_model
+
 def make_model(*, key, model_class, hyperparams):
     
     model_key, init_key = jr.split(key)
@@ -161,9 +168,25 @@ def make_model(*, key, model_class, hyperparams):
         )
     ]
     custom_init_ncde = init_linear_weight(model.ncde, init_fn, init_key)
-    custom_init_model = eqx.tree_at(lambda m: m.ncde, model, custom_init_ncde)
+    model = eqx.tree_at(lambda m: m.ncde, model, custom_init_ncde)
 
-    return custom_init_model
+    ncde_dtype = hyperparams.get(
+        'ncde_dtype', None
+    )
+    if isinstance(ncde_dtype, str):
+        ncde_dtype = getattr(jnp, ncde_dtype)
+        custom_dtype_ncde = change_dtype(model.ncde, ncde_dtype)
+        model = eqx.tree_at(lambda m: m.ncde, model, custom_dtype_ncde)
+
+    classifier_dtype = hyperparams.get(
+        'classifier_dtype', None
+    )
+    if isinstance(classifier_dtype, str):
+        classifier_dtype = getattr(jnp, classifier_dtype)
+        custom_dtype_classifier = change_dtype(model.classifier, ncde_dtype)
+        model = eqx.tree_at(lambda m: m.classifier, model, custom_dtype_classifier)
+
+    return model
 
 def save_hyperparams(filename, hyperparams):
     with open(filename, "wb") as f:
