@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import jax.random as jr
 
 from typing import Sequence
+from functools import partial
 from collections.abc import Callable
 from jaxtyping import Array, PRNGKeyArray
 
@@ -226,6 +227,24 @@ class StackedInitialHiddenState(eqx.Module):
         outputs = tuple(outputs)
 
         return outputs
+
+class StackedLinearInterpolation(eqx.Module):
+    num_stacks: int = eqx.field(static=True)
+    linear_interp: diffrax.LinearInterpolation
+
+    def __init__(self, ts, ys, num_stacks):
+
+        super().__init__()
+        self.num_stacks = num_stacks
+        self.linear_interp = diffrax.LinearInterpolation(ts, ys)
+    
+    def evaluate(self, t0, t1=None, left=True):
+        interp = self.linear_interp.evaluate(t0, t1, left)
+        interp_tuple = tuple([interp] * self.num_stacks)
+        return interp_tuple
+
+    def __call__(self, t0, t1=None, left=True):
+        return self.evaluate(t0, t1, left)
         
 class OnlineNCDE(eqx.Module):
     initial: StackedInitialHiddenState
@@ -293,8 +312,10 @@ class OnlineNCDE(eqx.Module):
         # parameterising a control path. These are used to produce a continuous-time
         # input path `control`.
         
-        _control = diffrax.LinearInterpolation(ts_interp, obs_interp)
-        control = lambda t0, t1: tuple([_control.evaluate(t0, t1)]*self.num_stacks)
+        #_control = diffrax.LinearInterpolation(ts_interp, obs_interp)
+        #control = lambda t0, t1: tuple([_control.evaluate(t0, t1)]*self.num_stacks)
+        #control = partial(stacked_control_fn, control=_control, num_stacks=self.num_stacks)
+        control = StackedLinearInterpolation(ts_interp, obs_interp, self.num_stacks)
         term = diffrax.ControlTerm(self.vector_field, control).to_ode()
         dt0 = None
         y0 = self.initial(control(ts[0], tmax))
