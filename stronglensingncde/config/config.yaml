@@ -89,7 +89,7 @@ model:
     classifier_width: 128
     classifier_depth: 2
     classifier_activation: gelu
-    ncde_dtype: null
+    classifier_dtype: null
     num_classes: 11
     ncde_rtol: 1e-3
     ncde_atol: 1e-3
