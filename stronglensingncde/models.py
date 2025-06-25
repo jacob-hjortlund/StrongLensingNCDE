@@ -7,6 +7,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 
+from typing import Sequence
 from collections.abc import Callable
 from jaxtyping import Array, PRNGKeyArray
 
@@ -74,15 +75,167 @@ class VectorField(eqx.Module):
         output = output.astype(jnp.float64)
 
         return output
+    
+class StackedVectorField(eqx.Module):
+    num_vector_fields: int = eqx.field(static=True)
+    vector_fields: tuple[VectorField, ...]
 
+    def __init__(
+        self,
+        num_vector_fields: int,
+        data_size: int,
+        hidden_size: int | Sequence[int],
+        width_size: int | Sequence[int],
+        depth: int | Sequence[int],
+        activation=jnn.softplus,
+        final_activation=jnn.tanh,
+        *,
+        key,
+        **kwargs
+    ):
+        
+        super().__init__(**kwargs)
+        self.num_vector_fields = num_vector_fields
+
+        if isinstance(hidden_size, int):
+            hidden_sizes = tuple([hidden_size] * num_vector_fields)
+
+        if isinstance(width_size, int):
+            width_size = tuple([width_size] * num_vector_fields)
+
+        if isinstance(depth, int):
+            depth = tuple([depth] * num_vector_fields)
+
+        keys = jr.split(key, num_vector_fields)
+        vector_fields = []
+        vector_fields.append(
+            VectorField(
+                data_size=data_size,
+                hidden_size=hidden_sizes[0],
+                width_size=width_size[0],
+                depth=depth[0],
+                activation=activation,
+                final_activation=final_activation,
+                key=keys[0]
+            )
+        )
+        if num_vector_fields > 1:
+            for i in range(num_vector_fields-1):
+                vector_fields.append(
+                    VectorField(
+                        data_size=hidden_sizes[i],
+                        hidden_size=hidden_sizes[i+1],
+                        width_size=width_size[i+1],
+                        depth=depth[i+1],
+                        activation=activation,
+                        final_activation=final_activation,
+                        key=keys[i+1]
+                    )
+                )
+        vector_fields = tuple(vector_fields)
+        self.vector_fields = vector_fields
+    
+    def __call__(self, t, y, args) -> tuple[Array, ...]:
+
+        outputs = []
+        outputs.append(
+            self.vector_fields[0](t, y[0], args)
+        )
+        if self.num_vector_fields > 1:
+            for i in range(self.num_vector_fields-1):
+                vector_field_output = self.vector_fields[i+1](
+                    t, y[i+1], args
+                )
+                modified_vector_field_output = jnp.matmul(
+                    vector_field_output, outputs[-1]
+                )
+                outputs.append(modified_vector_field_output)
+        
+        outputs = tuple(outputs)
+
+        return outputs
+
+class StackedInitialHiddenState(eqx.Module):
+    num_hidden_states: int = eqx.field(static=True)
+    hidden_states: tuple[eqx.nn.MLP, ...]
+
+    def __init__(
+        self,
+        num_hidden_states: int,
+        data_size: int,
+        hidden_size: int | Sequence[int],
+        width_size: int | Sequence[int],
+        depth: int | Sequence[int],
+        activation=jnn.softplus,
+        *,
+        key,
+        **kwargs
+    ):
+        
+        super().__init__(**kwargs)
+        self.num_hidden_states = num_hidden_states
+
+        if isinstance(hidden_size, int):
+            hidden_sizes = tuple([hidden_size] * num_hidden_states)
+
+        if isinstance(width_size, int):
+            width_sizes = tuple([width_size] * num_hidden_states)
+
+        if isinstance(depth, int):
+            depths = tuple([depth] * num_hidden_states)
+
+        keys = jr.split(key, num_hidden_states)
+        hidden_states = []
+
+        hidden_states.append(
+            eqx.nn.MLP(
+                in_size=data_size,
+                out_size=hidden_sizes[0],
+                width_size=width_sizes[0],
+                depth=depths[0],
+                key=keys[0],
+                activation=activation,
+            )
+        )
+        if num_hidden_states > 1:
+            for i in range(num_hidden_states - 1):
+                hidden_states.append(
+                    eqx.nn.MLP(
+                        in_size=hidden_sizes[i],
+                        out_size=hidden_sizes[i+1],
+                        width_size=width_sizes[i+1],
+                        depth=depths[i+1],
+                        key=keys[i+1],
+                        activation=activation,
+                    )
+                )
+        hidden_states = tuple(hidden_states)
+        self.hidden_states = hidden_states
+
+    def __call__(self, x) -> tuple[Array, ...]:
+
+        outputs = []
+        outputs.append(
+            self.hidden_states[0](x[0]).astype(jnp.float64)
+        )
+        if self.num_hidden_states > 1:
+            for i in range(self.num_hidden_states - 1):
+                outputs.append(
+                    self.hidden_states[i+1](outputs[i]).astype(jnp.float64)
+                )
+        outputs = tuple(outputs)
+
+        return outputs
+        
 class OnlineNCDE(eqx.Module):
-    initial: eqx.nn.MLP
-    vector_field: VectorField
+    initial: StackedInitialHiddenState
+    vector_field: StackedVectorField
     adjoint: diffrax.AbstractAdjoint
     solver: diffrax.AbstractSolver
-    max_steps: int
-    atol: float
-    rtol: float
+    num_stacks: int = eqx.field(static=True)
+    max_steps: int = eqx.field(static=True)
+    atol: float = eqx.field(static=True)
+    rtol: float = eqx.field(static=True)
 
     def __init__(
         self,
@@ -97,25 +250,28 @@ class OnlineNCDE(eqx.Module):
         atol=1e-6,
         activation=jnn.softplus,
         weight_norm=False,
+        num_stacks = 1,
         *,
         key,
         **kwargs
     ):
         super().__init__()
         ikey, fkey, lkey = jr.split(key, 3)
-        initial = eqx.nn.MLP(
-            data_size,
-            hidden_size,
-            width_size,
-            depth,
+        initial = StackedInitialHiddenState(
+            num_hidden_states=num_stacks,
+            data_size=data_size,
+            hidden_size=hidden_size,
+            width_size=width_size,
+            depth=depth,
             key=ikey,
             activation=activation,
         )
-        vector_field = VectorField(
-            data_size,
-            hidden_size,
-            width_size,
-            depth,
+        vector_field = StackedVectorField(
+            num_vector_fields=num_stacks,
+            data_size=data_size,
+            hidden_size=hidden_size,
+            width_size=width_size,
+            depth=depth,
             key=fkey,
             activation=activation,
         )
@@ -125,6 +281,7 @@ class OnlineNCDE(eqx.Module):
         
         self.initial = initial
         self.vector_field = vector_field
+        self.num_stacks = num_stacks
         self.solver = solver
         self.adjoint = adjoint
         self.max_steps = max_steps
@@ -135,12 +292,12 @@ class OnlineNCDE(eqx.Module):
         # Each sample of data consists of some timestamps `ts`, and some `coeffs`
         # parameterising a control path. These are used to produce a continuous-time
         # input path `control`.
-
-        control = diffrax.LinearInterpolation(ts_interp, obs_interp)
+        
+        _control = diffrax.LinearInterpolation(ts_interp, obs_interp)
+        control = lambda t0, t1: tuple([_control.evaluate(t0, t1)]*self.num_stacks)
         term = diffrax.ControlTerm(self.vector_field, control).to_ode()
         dt0 = None
-        y0 = self.initial(control.evaluate(ts[0]))
-        y0 = y0.astype(jnp.float64)
+        y0 = self.initial(control(ts[0], tmax))
 
         saveat = diffrax.SaveAt(ts=ts)
         solution = diffrax.diffeqsolve(
@@ -158,7 +315,7 @@ class OnlineNCDE(eqx.Module):
             max_steps=self.max_steps,
         )
 
-        representations = solution.ys
+        representations = solution.ys[-1]
         representations_shape = representations.shape
         representations_mask = ts <= tmax
         representations = jnp.where(
@@ -188,6 +345,7 @@ class PoolingONCDEClassifier(eqx.Module):
         classifier_width: int,
         classifier_depth: int,
         num_classes: int,
+        ncde_num_stacks: int = 1,
         ncde_activation: Callable | str = jnn.softplus,
         classifier_activation: Callable | str = jnn.leaky_relu,
         ncde_weight_norm: bool = False,
@@ -227,6 +385,7 @@ class PoolingONCDEClassifier(eqx.Module):
                 raise ValueError(f"Activation {classifier_activation} not found in jax.nn.")
 
         self.ncde = OnlineNCDE(
+            num_stacks=ncde_num_stacks,
             data_size=input_feature_size,
             hidden_size=representation_size,
             width_size=ncde_width,
