@@ -48,7 +48,7 @@ class VectorField(eqx.Module):
         depth,
         activation=jnn.softplus,
         final_activation=jnn.tanh,
-        weight_norm=False,
+        dtype=None,
         *,
         key,
         **kwargs
@@ -67,10 +67,15 @@ class VectorField(eqx.Module):
             # rate of change of their hidden states.)
             final_activation=final_activation,
             key=key,
+            dtype=dtype
         )
 
     def __call__(self, t, y, args):
-        return self.mlp(y).reshape(self.hidden_size, self.data_size)
+
+        output = self.mlp(y).reshape(self.hidden_size, self.data_size)
+        output = output.astype(jnp.float64)
+
+        return output
 
 class OnlineNCDE(eqx.Module):
     initial: eqx.nn.MLP
@@ -94,6 +99,7 @@ class OnlineNCDE(eqx.Module):
         atol=1e-6,
         activation=jnn.softplus,
         weight_norm=False,
+        dtype=None,
         *,
         key,
         **kwargs
@@ -107,6 +113,7 @@ class OnlineNCDE(eqx.Module):
             depth,
             key=ikey,
             activation=activation,
+            dtype=dtype,
         )
         vector_field = VectorField(
             data_size,
@@ -115,6 +122,7 @@ class OnlineNCDE(eqx.Module):
             depth,
             key=fkey,
             activation=activation,
+            dtype=dtype,
         )
         if weight_norm:
             initial = apply_WeightNorm(initial)
@@ -137,6 +145,7 @@ class OnlineNCDE(eqx.Module):
         term = diffrax.ControlTerm(self.vector_field, control).to_ode()
         dt0 = None
         y0 = self.initial(control.evaluate(ts[0]))
+        y0 = y0.astype(jnp.float64)
 
         saveat = diffrax.SaveAt(ts=ts)
         solution = diffrax.diffeqsolve(
@@ -187,6 +196,8 @@ class PoolingONCDEClassifier(eqx.Module):
         ncde_activation: Callable | str = jnn.softplus,
         classifier_activation: Callable | str = jnn.leaky_relu,
         ncde_weight_norm: bool = False,
+        ncde_dtype = None,
+        classifier_dtype = None,
         *,
         key,
         **kwargs
@@ -201,6 +212,12 @@ class PoolingONCDEClassifier(eqx.Module):
                 ncde_adjoint = getattr(diffrax, ncde_adjoint)()
             except AttributeError:
                 raise ValueError(f"Adjoint method {ncde_adjoint} not found in diffrax.")
+
+        if isinstance(ncde_dtype, str):
+            try:
+                ncde_dtype = getattr(jnp, ncde_dtype)
+            except AttributeError:
+                raise ValueError(f"NCDE dtype {ncde_dtype} not found in jax.numpy")
 
         if isinstance(ncde_solver, str):
             try:
@@ -221,6 +238,12 @@ class PoolingONCDEClassifier(eqx.Module):
                 classifier_activation = getattr(jnn, classifier_activation)
             except AttributeError:
                 raise ValueError(f"Activation {classifier_activation} not found in jax.nn.")
+        
+        if isinstance(classifier_dtype, str):
+            try:
+                classifier_dtype = getattr(jnp, classifier_dtype)
+            except AttributeError:
+                raise ValueError(f"NCDE dtype {classifier_dtype} not found in jax.numpy")
 
         self.ncde = OnlineNCDE(
             data_size=input_feature_size,
@@ -234,7 +257,8 @@ class PoolingONCDEClassifier(eqx.Module):
             atol=ncde_atol,
             key=ncde_key,
             activation=ncde_activation,
-            weight_norm=ncde_weight_norm
+            weight_norm=ncde_weight_norm,
+            dtype=ncde_dtype,
         )
 
         self.classifier = eqx.nn.MLP(
@@ -244,6 +268,7 @@ class PoolingONCDEClassifier(eqx.Module):
             depth=classifier_depth,
             activation=classifier_activation,
             key=classifier_key,
+            dtype=classifier_dtype,
         )
 
     def __call__(self, ts, ts_interp, obs_interp, t_max, valid_mask):
