@@ -175,8 +175,10 @@ def make_model(*, key, model_class, hyperparams):
     )
     if isinstance(ncde_dtype, str):
         ncde_dtype = getattr(jnp, ncde_dtype)
-        custom_dtype_ncde = change_dtype(model.ncde, ncde_dtype)
-        model = eqx.tree_at(lambda m: m.ncde, model, custom_dtype_ncde)
+        custom_dtype_ncde_initial = change_dtype(model.ncde.initial, ncde_dtype)
+        custom_dtype_ncde_vector_field = change_dtype(model.ncde.vector_field, ncde_dtype)
+        model = eqx.tree_at(lambda m: m.ncde.initial, model, custom_dtype_ncde_initial)
+        model = eqx.tree_at(lambda m: m.ncde.vector_field, model, custom_dtype_ncde_vector_field)
 
     classifier_dtype = hyperparams.get(
         'classifier_dtype', None
