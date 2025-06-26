@@ -1,4 +1,5 @@
 import jax
+import math
 import diffrax
 
 import jax.nn as jnn
@@ -6,10 +7,15 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 
-from typing import Sequence
 from functools import partial
+from typing import Sequence, Any
 from collections.abc import Callable
 from jaxtyping import Array, PRNGKeyArray
+
+def default_init(
+    key: PRNGKeyArray, shape: tuple[int, ...], lim: float
+) -> jax.Array:
+    return jr.uniform(key, shape, minval=-lim, maxval=lim)
 
 def _apply_weight_norm(x):
     if isinstance(x, eqx.nn.Linear):
@@ -35,6 +41,75 @@ class SamplingWeights(eqx.Module):
     def __call__(self, *args, **kwargs):
 
         return jax.nn.softmax(self.logits)
+
+class GRUDCell(eqx.Module):
+
+    idecay_weight: Array
+    idecay_bias: Array
+    nbias: Array
+    hdecay: eqx.nn.Linear
+    igates: eqx.nn.Linear
+    hgates: eqx.nn.Linear
+    mgates: eqx.nn.Linear
+    use_bias: bool
+
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        use_bias: bool = True,
+        *,
+        key: PRNGKeyArray,
+    ):
+        
+        idwkey, idbkey, nbkey, hdkey, igkey, hgkey, mgkey = jr.split(key, 7)
+        lim = math.sqrt(1 / hidden_size)
+
+        self.idecay_weight = default_init(
+            key=idwkey,
+            shape=input_size,
+            lim=lim
+        )
+        self.idecay_bias = default_init(
+            key=idbkey,
+            shape=input_size,
+            lim=lim
+        )
+        self.nbias = default_init(
+            key=nbkey,
+            shape=hidden_size,
+            lim=lim
+        )
+        self.hdecay = eqx.nn.Linear(
+            in_features=hidden_size,
+            out_features=hidden_size,
+            use_bias=use_bias,
+            key=hdkey,
+        )
+        self.igates = eqx.nn.Linear(
+            in_features=input_size,
+            out_features=3*hidden_size,
+            use_bias=False,
+            key=igkey,
+        )
+        self.mgates = eqx.nn.Linear(
+            in_features=input_size,
+            out_features=3*hidden_size,
+            use_bias=use_bias,
+            key=mgkey,
+        )
+        self.hgates = eqx.nn.Linear(
+            in_features=hidden_size,
+            out_features=3*hidden_size,
+            use_bias=False,
+            key=hgkey,
+        )
+
+        self.use_bias = use_bias
+        
+    def __call__(self, input, delay, mask, hidden):
+        pass
 
 class VectorField(eqx.Module):
     mlp: eqx.nn.MLP
