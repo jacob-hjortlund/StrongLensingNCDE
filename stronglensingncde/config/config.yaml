@@ -87,15 +87,16 @@ model:
     ncde_max_steps: 1048576
     ncde_activation: gelu
     ncde_dtype: null
+    ncde_rtol: 1e-3
+    ncde_atol: 1e-3
+    ncde_weight_norm: False
     classifier_width: 128
     classifier_depth: 2
     classifier_activation: gelu
     classifier_dtype: null
     num_classes: 11
-    ncde_rtol: 1e-3
-    ncde_atol: 1e-3
-    ncde_weight_norm: False
     weight_init_fn: identity
+    checkpoint_ncde: False
 
 range_finding:
   num_steps: 200

@@ -370,6 +370,7 @@ class PoolingONCDEClassifier(eqx.Module):
         ncde_activation: Callable | str = jnn.softplus,
         classifier_activation: Callable | str = jnn.leaky_relu,
         ncde_weight_norm: bool = False,
+        checkpoint_ncde: bool = False,
         *,
         key,
         **kwargs
@@ -405,7 +406,7 @@ class PoolingONCDEClassifier(eqx.Module):
             except AttributeError:
                 raise ValueError(f"Activation {classifier_activation} not found in jax.nn.")
 
-        self.ncde = OnlineNCDE(
+        ncde = OnlineNCDE(
             num_stacks=ncde_num_stacks,
             data_size=input_feature_size,
             hidden_size=representation_size,
@@ -420,6 +421,11 @@ class PoolingONCDEClassifier(eqx.Module):
             activation=ncde_activation,
             weight_norm=ncde_weight_norm,
         )
+
+        if checkpoint_ncde:
+            ncde = eqx.filter_checkpoint(ncde)
+
+        self.ncde = ncde
 
         self.classifier = eqx.nn.MLP(
             in_size=2*representation_size,

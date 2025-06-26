@@ -359,10 +359,6 @@ def training_loop(
         eqx.filter(model, eqx.is_inexact_array)
     )
     
-    loss_fn = jax.checkpoint(
-        loss_fn,
-        policy=jax.checkpoint_policies.dots_with_no_batch_dims_saveable
-    )
     train_step = make_train_step(optimizer, loss_fn)
     val_step = make_val_step(loss_fn)
 
