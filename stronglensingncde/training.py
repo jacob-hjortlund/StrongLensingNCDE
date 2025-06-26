@@ -199,7 +199,7 @@ def inner_loop(
 
         if fixed_lr is None:
             current_lr = optimizer_state[1].inner_state.hyperparams['learning_rate']
-            current_lr = current_lr.astype(jnp.float64)
+            current_lr = current_lr#.astype(jnp.float64)
         else:
             current_lr = fixed_lr
 
