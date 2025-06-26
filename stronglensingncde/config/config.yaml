@@ -70,6 +70,7 @@ training:
     verbose_epochs: True
     val_steps_per_epoch: ${training.data_settings.steps_per_epoch}
     save_every_n_epochs: null
+    only_use_first_column: False
 
 model:
   name: specz_xe_loss_64

@@ -179,6 +179,7 @@ def inner_loop(
     number_of_steps = None,
     verbose = False,
     exception_path = None,
+    only_use_first_column = False,
 ):
     
     if not number_of_steps:
@@ -207,6 +208,27 @@ def inner_loop(
 
         data = next(dataloader)
         data = [output.numpy() for output in data]
+
+        if only_use_first_column:
+            (
+                times, flux, partial_ts, trigger_idx,
+                lengths, peak_times, max_times, 
+                binary_labels, multiclass_labels,
+                valid_lightcurve_mask
+            ) = data
+
+            flux = flux[:, 0:1]
+            partial_ts = partial_ts[:, 0:1]
+            peak_times = peak_times[:, 0:1]
+            multiclass_labels = multiclass_labels[:, 0:1]
+            valid_lightcurve_mask = valid_lightcurve_mask[:, 0:1]
+
+            data = (
+                times, flux, partial_ts, trigger_idx,
+                lengths, peak_times, max_times, 
+                binary_labels, multiclass_labels,
+                valid_lightcurve_mask
+            )   
         
         loss, aux, model, optimizer_state, gradients = step_fn(
             model, data, optimizer_state
@@ -346,6 +368,7 @@ def training_loop(
     patience: int = 10,
     val_steps_per_epoch: int = None,
     save_every_n_epochs: int = None,
+    only_use_first_column: bool = False,
 ):
     
     total_number_of_epochs = number_of_epochs + number_of_warmup_epochs
@@ -413,6 +436,7 @@ def training_loop(
             number_of_steps=steps_per_epoch,
             verbose=verbose_steps,
             exception_path=save_path,
+            only_use_first_column=only_use_first_column,
         )
         last_train_lr = train_aux[4][-1]
 
