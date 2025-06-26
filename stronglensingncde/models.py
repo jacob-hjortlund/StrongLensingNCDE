@@ -72,7 +72,6 @@ class VectorField(eqx.Module):
     def __call__(self, t, y, args):
 
         output = self.mlp(y).reshape(self.hidden_size, self.data_size)
-        output = output.astype(jnp.float64)
 
         return output
     
@@ -216,12 +215,12 @@ class StackedInitialHiddenState(eqx.Module):
 
         outputs = []
         outputs.append(
-            self.hidden_states[0](x[0]).astype(jnp.float64)
+            self.hidden_states[0](x[0])
         )
         if self.num_hidden_states > 1:
             for i in range(self.num_hidden_states - 1):
                 outputs.append(
-                    self.hidden_states[i+1](outputs[i]).astype(jnp.float64)
+                    self.hidden_states[i+1](outputs[i])
                 )
         outputs = tuple(outputs)
 
