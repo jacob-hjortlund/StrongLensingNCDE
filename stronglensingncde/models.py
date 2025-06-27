@@ -329,6 +329,7 @@ class OnlineNCDE(eqx.Module):
     atol: float = eqx.field(static=True)
     rtol: float = eqx.field(static=True)
     use_jump_ts: bool = eqx.field(static=True)
+    throw: bool = eqx.field(static=True)
 
     def __init__(
         self,
@@ -345,6 +346,7 @@ class OnlineNCDE(eqx.Module):
         weight_norm=False,
         num_stacks = 1,
         use_jump_ts = False,
+        throw=True,
         *,
         key,
         **kwargs
@@ -382,6 +384,7 @@ class OnlineNCDE(eqx.Module):
         self.atol = atol
         self.rtol = rtol
         self.use_jump_ts = use_jump_ts
+        self.throw = throw
 
     def __call__(self, ts, ts_interp, obs_interp, tmax):
 
@@ -410,6 +413,7 @@ class OnlineNCDE(eqx.Module):
             saveat=saveat,
             adjoint=self.adjoint,
             max_steps=self.max_steps,
+            throw=self.throw,
         )
 
         representations = solution.ys[-1]
@@ -421,7 +425,7 @@ class OnlineNCDE(eqx.Module):
             jnp.ones(representations_shape)*-99
         )
 
-        return representations
+        return representations, solution
 
 class PoolingONCDEClassifier(eqx.Module):
 
@@ -445,6 +449,7 @@ class PoolingONCDEClassifier(eqx.Module):
         ncde_num_stacks: int = 1,
         ncde_activation: Callable | str = jnn.softplus,
         ncde_use_jump_ts: bool = False,
+        ncde_throw: bool = True,
         ncde_weight_norm: bool = False,
         checkpoint_ncde: bool = False,
         classifier_activation: Callable | str = jnn.leaky_relu,
@@ -498,6 +503,7 @@ class PoolingONCDEClassifier(eqx.Module):
             activation=ncde_activation,
             weight_norm=ncde_weight_norm,
             use_jump_ts=ncde_use_jump_ts,
+            throw=ncde_throw,
         )
 
         if checkpoint_ncde:
@@ -516,9 +522,11 @@ class PoolingONCDEClassifier(eqx.Module):
 
     def __call__(self, ts, ts_interp, obs_interp, t_max, valid_mask):
 
-        representations = jax.vmap(
+        representations, solution = jax.vmap(
             self.ncde, in_axes=(None, 0, 0, None)
         )(ts, ts_interp, obs_interp, t_max) # (N_max_img, max_length, representation_size)
+
+        solution_flags = solution.result._value
 
         #pooled_representations = jnp.mean(representations, axis=0) # (max_length, representation_size)
         pooled_representations = jnp.sum(representations, axis=0) / jnp.sum(valid_mask, axis=0) # (max_length, representation_size)
@@ -533,4 +541,4 @@ class PoolingONCDEClassifier(eqx.Module):
 
         logits = jax.vmap(jax.vmap(self.classifier))(contextualized_representations)   # (N_max_img, max_length, num_classes)
         
-        return logits, contextualized_representations
+        return logits, contextualized_representations, solution_flags

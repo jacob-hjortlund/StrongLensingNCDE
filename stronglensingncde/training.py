@@ -180,6 +180,7 @@ def inner_loop(
     verbose = False,
     exception_path = None,
     only_use_first_column = False,
+    except_on_failure = False,
 ):
     
     if not number_of_steps:
@@ -190,6 +191,7 @@ def inner_loop(
     losses = []
     metrics = []
     aux_vals = []
+    failure_rate = []
     lrs = []
 
     t_init = time.time()
@@ -238,9 +240,19 @@ def inner_loop(
             grads_contain_inf = utils.tree_contains_inf(gradients)
             grads_contain_nan = utils.tree_contains_nan(gradients)
 
+        step_solution_flags = aux[2]
+        is_failure = step_solution_flags != 0.
+        step_num_failures = np.sum(is_failure)
+        step_failure_rate = step_num_failures / len(data[0])
+        failure_rate.append(step_failure_rate)
+
         invalid_grads = grads_contain_inf | grads_contain_nan
         loss_is_invalid = ~jnp.isfinite(loss)
         loss_or_grads_invalid = invalid_grads | loss_is_invalid
+        
+        if except_on_failure:
+            has_failure = step_num_failures != 0
+            loss_or_grads_invalid = loss_or_grads_invalid | has_failure
 
         if loss_or_grads_invalid:
 
@@ -260,35 +272,20 @@ def inner_loop(
 
                 for arr, name in zip(aux, [losses, metrics]):
                     np.save(exception_path / f"{name}.npy", arr)
+                
+                np.save(exception_path / f"solution_flags.npy", step_solution_flags)
+                utils.save_model(exception_path / "model_at_failure.eqx", model)
+                utils.save_model(exception_path / "grads_at_failure.eqx", gradients)
 
+                exception_string += f"Metadata has been saved to:\n{exception_path}"  
+                
             exception_string = (
                 "Gradients or loss is invalid. They contain:\n" +
                 f"Infs: {grads_contain_inf}\n" +
                 f"NaNs: {grads_contain_nan}\n" +
-                f"Loss: {loss_is_invalid}\n" 
-            )
-
-            if exception_path:
-                exception_path = exception_path / 'exception'
-                exception_path.mkdir(parents=True, exist_ok=True)
-
-                names = (
-                    "times", "flux", "partial_ts", "trigger_idx",
-                    "lengths", "peak_times", "max_times", 
-                    "binary_labels", "multiclass_labels",
-                    "valid_lightcurve_mask"
-                )
-
-                for arr, name in zip(data, names):
-                    np.save(exception_path / f"{name}.npy", arr)
-
-                for arr, name in zip(aux, [losses, metrics]):
-                    np.save(exception_path / f"{name}.npy", arr)
-
-                utils.save_model(exception_path / "model_at_failure.eqx", model)
-                utils.save_model(exception_path / "grads_at_failure.eqx", gradients)
-
-                exception_string += f"Metadata has been saved to:\n{exception_path}"   
+                f"Loss: {loss_is_invalid}\n" +
+                f"Num. Failures: {step_num_failures} / {step_failure_rate*100:.2f}%\n" 
+            ) 
 
             print(exception_string)
             raise ValueError(exception_string)
@@ -296,6 +293,7 @@ def inner_loop(
         total_loss += loss
         step_losses = aux[0]
         step_metrics = aux[1]
+
         losses.append(step_losses)
         metrics.append(step_metrics)
         lrs.append(current_lr)
@@ -314,6 +312,7 @@ def inner_loop(
 
             step_string = (
                 f"Step: {step} | Loss: {loss:.2e} | " +
+                f"Failure Rate: {step_failure_rate*100:.2f}% | " +
                 f"Stable Acc.: {stable_accuracy*100:.2f}% | " +
                 f"T_0: {earliest_time:.2f} | " +
                 f"Stable T_0: {stable_earliest_time:.2f} | " +
@@ -333,10 +332,12 @@ def inner_loop(
     avg_loss = total_loss / number_of_steps
     losses = np.array(losses)
     metrics = np.array(metrics)
+    failure_rate = np.array(failure_rate)
     lrs = np.array(lrs)
 
-    avg_metrics = np.mean(np.array(metrics), axis=0)
-    avg_losses = np.mean(np.array(losses), axis=0)
+    avg_metrics = np.mean(metrics, axis=0)
+    avg_losses = np.mean(losses, axis=0)
+    avg_failure_rate = np.mean(failure_rate)
     init_lr, final_lr = lrs[0], lrs[-1]
     
     total_time = time.time() - t_init
@@ -344,7 +345,8 @@ def inner_loop(
 
     aux_vals = (
         avg_losses, avg_metrics, avg_step_time,
-        losses, (init_lr, final_lr), metrics
+        losses, (init_lr, final_lr), metrics,
+        avg_failure_rate
     )
 
     if verbose:
@@ -369,6 +371,7 @@ def training_loop(
     val_steps_per_epoch: int = None,
     save_every_n_epochs: int = None,
     only_use_first_column: bool = False,
+    except_on_failure: bool = False,
 ):
     
     total_number_of_epochs = number_of_epochs + number_of_warmup_epochs
@@ -437,6 +440,7 @@ def training_loop(
             verbose=verbose_steps,
             exception_path=save_path,
             only_use_first_column=only_use_first_column,
+            except_on_failure=except_on_failure
         )
         last_train_lr = train_aux[4][-1]
 
@@ -468,10 +472,12 @@ def training_loop(
             train_num_transitions = avg_train_metrics[4]
             train_ts_accuracy = avg_train_metrics[5]
             train_init_lr, train_final_lr = train_aux[4]
+            train_failure_rate = train_aux[-1]
 
             train_string = (
                 f"Train - " +
                 f"Loss: {avg_train_loss:.2e} | " +
+                f"Failure Rate: {train_failure_rate*100:.2f}% | " +
                 f"Stable Acc.: {train_stable_accuracy*100:.2f}% | " +
                 f"T_0: {train_earliest_time:.2f} | " +
                 f"Stable T_0: {train_stable_earliest_time:.2f} | " +
@@ -491,10 +497,12 @@ def training_loop(
             val_num_transitions = avg_val_metrics[4]
             val_ts_accuracy = avg_val_metrics[5]
             val_init_lr, val_final_lr = val_aux[4]
+            val_failure_rate = val_aux[-1]
 
             val_string = (
                 f"Val   - " +
                 f"Loss: {avg_val_loss:.2e} | " +
+                f"Failure Rate: {val_failure_rate*100:.2f}% | " +
                 f"Stable Acc.: {val_stable_accuracy*100:.2f}% | " +
                 f"T_0: {val_earliest_time:.2f} | " +
                 f"Stable T_0: {val_stable_earliest_time:.2f} | " +

@@ -557,7 +557,7 @@ def make_loss_and_metric_fn(
         valid_lightcurve_mask: jnp.ndarray,
     ):
         
-        logits, representations = jax.vmap(
+        logits, representations, solution_flags = jax.vmap(
             model, in_axes=(0, 0, 0, 0, 0)
         )(s, interp_s, interp_ts, max_s, valid_lightcurve_mask)    # (N_batch, N_max_img, max_length, num_classes)
         
@@ -638,15 +638,16 @@ def make_loss_and_metric_fn(
 
         metrics = jnp.concatenate(
             [
+                
                 stable_accuracy[None],
                 median_earliest_time[None],
                 median_earliest_stable_time[None],
                 transition_rate[None],
                 num_transitions[None],
-                metrics
+                metrics,
             ]
         )
 
-        return loss, (losses, metrics)
+        return loss, (losses, metrics, solution_flags)
     
     return loss_fn

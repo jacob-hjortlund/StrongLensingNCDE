@@ -72,6 +72,7 @@ training:
     val_steps_per_epoch: ${training.data_settings.steps_per_epoch}
     save_every_n_epochs: null
     only_use_first_column: False
+    except_on_failure: True
 
 model:
   name: specz_xe_loss_64
@@ -93,6 +94,7 @@ model:
     ncde_atol: 1e-3
     ncde_use_jump_ts: False
     ncde_weight_norm: False
+    ncde_throw: True
     classifier_width: 128
     classifier_depth: 2
     classifier_activation: gelu
