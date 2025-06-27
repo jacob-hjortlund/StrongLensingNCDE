@@ -14,7 +14,7 @@ from tqdm import trange
 from jaxtyping import Array
 from collections.abc import Callable
 
-@jax.jit
+@eqx.filter_jit
 def tree_contains_inf(tree):
 
     isInf = jax.tree_util.tree_map(lambda x: jnp.any(jnp.isinf(x)), tree)
@@ -23,7 +23,7 @@ def tree_contains_inf(tree):
     
     return isInf
 
-@jax.jit
+@eqx.filter_jit
 def tree_contains_nan(tree):
 
     isNaN = jax.tree_util.tree_map(lambda x: jnp.any(jnp.isinf(x)), tree)

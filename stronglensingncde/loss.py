@@ -258,7 +258,7 @@ batch_mapped_number_of_transitions = jax.vmap(
     in_axes=(0, 0, 0)
 )
 
-@jax.jit
+@eqx.filter_jit
 def batch_median_earliest_correct_prediction_time(
     logits, label, times, length, trigger_idx, valid_lightcurve_mask
 ):
@@ -277,7 +277,7 @@ def batch_median_earliest_correct_prediction_time(
 
     return batch_earliest_time
 
-@jax.jit
+@eqx.filter_jit
 def batch_median_earliest_stable_correct_prediction_time(
     logits, label, times, length, trigger_idx, valid_lightcurve_mask
 ):
@@ -295,7 +295,7 @@ def batch_median_earliest_stable_correct_prediction_time(
 
     return batch_earliest_time
 
-@jax.jit
+@eqx.filter_jit
 def batch_stable_accuracy(
     logits, label, length, trigger_idx, valid_lightcurve_mask
 ):
@@ -312,7 +312,7 @@ def batch_stable_accuracy(
 
     return batch_stable_accuracy
 
-@jax.jit
+@eqx.filter_jit
 def batch_transition_rate(logits, lengths, trigger_idx, valid_lightcurve_mask):
 
     rates = batch_mapped_transition_rate(
@@ -323,7 +323,7 @@ def batch_transition_rate(logits, lengths, trigger_idx, valid_lightcurve_mask):
     masked_rates = jnp.where(valid_lightcurve_mask, rates, jnp.nan)
     return jnp.nanmean(masked_rates)
 
-@jax.jit
+@eqx.filter_jit
 def batch_number_of_transitions(logits, lengths, trigger_idx, valid_lightcurve_mask):
 
     num_transitions = batch_mapped_number_of_transitions(
