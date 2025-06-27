@@ -30,7 +30,7 @@ def train(cfg: DictConfig) -> None:
     rng_key = jr.PRNGKey(cfg['seed'])
 
     data_path = Path(cfg['training']['path'])
-    save_path = Path(cfg['model']['save_path'])
+    save_path = Path(cfg['model']['save_path']) / "range_finding"
     save_path.mkdir(parents=True, exist_ok=True)
     
     train_path = data_path / "train.h5"
