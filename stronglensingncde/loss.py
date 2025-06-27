@@ -383,19 +383,11 @@ def make_masked_timeseries_loss_fn(
         trigger_mask = indeces >= trigger_idx
         mask = jnp.logical_and(length_mask, trigger_mask)
 
-        loss = jnp.where(
-            length_mask,
-            _loss,
-            jax.lax.stop_gradient(_loss)
-        )
-        weights = jnp.where(
-            length_mask,
-            _weights,
-            jax.lax.stop_gradient(_weights)
-        )
+        loss = mask * _loss
+        weights = mask * _weights
         
         weighted_loss = loss * weights
-        ts_loss = jnp.sum(weighted_loss, axis=-1, where=mask) / jnp.sum(weights, axis=-1, where=mask)
+        ts_loss = jnp.sum(weighted_loss, axis=-1) / jnp.sum(weights, axis=-1)
 
         return ts_loss
 
@@ -448,9 +440,8 @@ def make_batch_loss_fn(
             covariance
         )   # (N_batch, N_max_img)
 
-        avg_batch_loss = jnp.sum(
-            batch_image_ts_loss, where=valid_lightcurve_mask
-        ) / jnp.sum(valid_lightcurve_mask)
+        batch_image_ts_loss = batch_image_ts_loss * valid_lightcurve_mask
+        avg_batch_loss = jnp.sum(batch_image_ts_loss) / jnp.sum(valid_lightcurve_mask)
 
         return avg_batch_loss
     
