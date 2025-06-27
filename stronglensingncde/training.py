@@ -255,7 +255,15 @@ def inner_loop(
             loss_or_grads_invalid = loss_or_grads_invalid | has_failure
 
         if loss_or_grads_invalid:
-
+            
+            exception_string = (
+                "Gradients or loss is invalid. They contain:\n" +
+                f"Infs: {grads_contain_inf}\n" +
+                f"NaNs: {grads_contain_nan}\n" +
+                f"Loss: {loss_is_invalid}\n" +
+                f"Num. Failures: {step_num_failures} / {step_failure_rate*100:.2f}%\n" 
+            )
+            
             if exception_path:
                 exception_path = exception_path / 'exception'
                 exception_path.mkdir(parents=True, exist_ok=True)
@@ -277,15 +285,7 @@ def inner_loop(
                 utils.save_model(exception_path / "model_at_failure.eqx", model)
                 utils.save_model(exception_path / "grads_at_failure.eqx", gradients)
 
-                exception_string += f"Metadata has been saved to:\n{exception_path}"  
-                
-            exception_string = (
-                "Gradients or loss is invalid. They contain:\n" +
-                f"Infs: {grads_contain_inf}\n" +
-                f"NaNs: {grads_contain_nan}\n" +
-                f"Loss: {loss_is_invalid}\n" +
-                f"Num. Failures: {step_num_failures} / {step_failure_rate*100:.2f}%\n" 
-            ) 
+                exception_string += f"Metadata has been saved to:\n{exception_path}"   
 
             print(exception_string)
             raise ValueError(exception_string)
