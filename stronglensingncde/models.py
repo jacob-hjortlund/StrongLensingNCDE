@@ -391,7 +391,7 @@ class OnlineNCDE(eqx.Module):
         control = StackedLinearInterpolation(ts_interp, obs_interp, self.num_stacks)
         term = diffrax.ControlTerm(self.vector_field, control).to_ode()
         dt0 = None
-        y0 = self.initial(control(ts[0], tmax))
+        y0 = self.initial(control(ts[0]))
 
         saveat = diffrax.SaveAt(ts=ts)
         solution = diffrax.diffeqsolve(
