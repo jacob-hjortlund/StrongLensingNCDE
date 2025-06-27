@@ -92,6 +92,8 @@ model:
     ncde_dtype: null
     ncde_rtol: 1e-3
     ncde_atol: 1e-3
+    ncde_pcoeff: 0.3
+    ncde_icoeff: 0.4
     ncde_use_jump_ts: False
     ncde_weight_norm: False
     ncde_throw: True

@@ -328,6 +328,8 @@ class OnlineNCDE(eqx.Module):
     max_steps: int = eqx.field(static=True)
     atol: float = eqx.field(static=True)
     rtol: float = eqx.field(static=True)
+    pcoeff: float = eqx.field(static=True)
+    icoeff: float = eqx.field(static=True)
     use_jump_ts: bool = eqx.field(static=True)
     throw: bool = eqx.field(static=True)
 
@@ -342,6 +344,8 @@ class OnlineNCDE(eqx.Module):
         max_steps,
         rtol=1e-3,
         atol=1e-6,
+        pcoeff=0.3,
+        icoeff=0.4,
         activation=jnn.softplus,
         weight_norm=False,
         num_stacks = 1,
@@ -383,6 +387,8 @@ class OnlineNCDE(eqx.Module):
         self.max_steps = max_steps
         self.atol = atol
         self.rtol = rtol
+        self.pcoeff = pcoeff
+        self.icoeff = icoeff
         self.use_jump_ts = use_jump_ts
         self.throw = throw
 
@@ -404,11 +410,12 @@ class OnlineNCDE(eqx.Module):
             term,
             self.solver,
             ts[0],
-            tmax,
+            ts[-1],
             dt0,
             y0,
             stepsize_controller=diffrax.PIDController(
-                rtol=self.rtol, atol=self.atol, jump_ts=jump_ts
+                rtol=self.rtol, atol=self.atol, jump_ts=jump_ts,
+                pcoeff=self.pcoeff, icoeff=self.icoeff
             ),
             saveat=saveat,
             adjoint=self.adjoint,
@@ -450,6 +457,8 @@ class PoolingONCDEClassifier(eqx.Module):
         ncde_activation: Callable | str = jnn.softplus,
         ncde_use_jump_ts: bool = False,
         ncde_throw: bool = True,
+        ncde_pcoeff: float = 0.3,
+        ncde_icoeff: float = 0.4,
         ncde_weight_norm: bool = False,
         checkpoint_ncde: bool = False,
         classifier_activation: Callable | str = jnn.leaky_relu,
@@ -499,6 +508,8 @@ class PoolingONCDEClassifier(eqx.Module):
             max_steps=ncde_max_steps,
             rtol=ncde_rtol,
             atol=ncde_atol,
+            pcoeff=ncde_pcoeff,
+            icoeff=ncde_icoeff,
             key=ncde_key,
             activation=ncde_activation,
             weight_norm=ncde_weight_norm,
