@@ -316,7 +316,7 @@ class HDF5TimeSeriesDataset(Dataset):
         if hasattr(self, 'h5_file'):
             self.h5_file.close()
 
-def pad_last(ts_list, lengths, max_length):
+def pad_last(ts_list, lengths, max_length, delta=None):
     """
     Args:
         ts_list (list or tuple of tensors): each tensor has shape (T_i, *F)
@@ -357,6 +357,11 @@ def pad_last(ts_list, lengths, max_length):
     # expand it to overwrite all padded positions
     expand_shape = (batch_size, max_length) + tuple(feature_shape)
     last_exp = last_row.unsqueeze(1).expand(*expand_shape)
+    
+    # Add delta to padded time values
+    if delta:
+        padding_increase = torch.cumsum(mask, axis=-1) * delta
+        last_exp = last_exp + padding_increase
 
     # flatten out batch & time, assign, then reshape back
     padded_flat = padded.reshape(-1, *feature_shape)    # (batch*max_length, *F)
@@ -368,7 +373,7 @@ def pad_last(ts_list, lengths, max_length):
 
     return padded
 
-def collate_fn(batch, max_length=None, nmax=None):
+def collate_fn(batch, max_length=None, nmax=None, t_delta=0.001):
     
     (
         t_list, flux_list, partial_ts_list, numeric_multiclass_labels_list,
@@ -389,7 +394,7 @@ def collate_fn(batch, max_length=None, nmax=None):
     if max_length is None:
         max_length = lengths.max().item()
 
-    padded_t = pad_last(t_list, lengths=lengths, max_length=max_length)
+    padded_t = pad_last(t_list, lengths=lengths, max_length=max_length, delta=t_delta)
 
     padded_flux = pad_last(flux_list, lengths=lengths, max_length=max_length)
     padded_flux = torch.permute(padded_flux, (0, 2, 1, 3))
@@ -460,6 +465,7 @@ def make_dataloader(
     pin_memory: bool = True,
     max_length: int = None,
     max_obs: int = None,
+    t_delta: int = None,
     subsample: bool = False,
     subsample_max_size: int = None,
     seed: int = 42,
