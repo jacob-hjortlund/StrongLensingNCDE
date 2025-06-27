@@ -381,13 +381,7 @@ class OnlineNCDE(eqx.Module):
         self.rtol = rtol
 
     def __call__(self, ts, ts_interp, obs_interp, tmax):
-        # Each sample of data consists of some timestamps `ts`, and some `coeffs`
-        # parameterising a control path. These are used to produce a continuous-time
-        # input path `control`.
-        
-        #_control = diffrax.LinearInterpolation(ts_interp, obs_interp)
-        #control = lambda t0, t1: tuple([_control.evaluate(t0, t1)]*self.num_stacks)
-        #control = partial(stacked_control_fn, control=_control, num_stacks=self.num_stacks)
+
         control = StackedLinearInterpolation(ts_interp, obs_interp, self.num_stacks)
         term = diffrax.ControlTerm(self.vector_field, control).to_ode()
         dt0 = None
