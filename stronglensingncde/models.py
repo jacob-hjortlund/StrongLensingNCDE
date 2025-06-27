@@ -328,6 +328,7 @@ class OnlineNCDE(eqx.Module):
     max_steps: int = eqx.field(static=True)
     atol: float = eqx.field(static=True)
     rtol: float = eqx.field(static=True)
+    use_jump_ts: bool = eqx.field(static=True)
 
     def __init__(
         self,
@@ -343,6 +344,7 @@ class OnlineNCDE(eqx.Module):
         activation=jnn.softplus,
         weight_norm=False,
         num_stacks = 1,
+        use_jump_ts = False,
         *,
         key,
         **kwargs
@@ -379,6 +381,7 @@ class OnlineNCDE(eqx.Module):
         self.max_steps = max_steps
         self.atol = atol
         self.rtol = rtol
+        self.use_jump_ts = use_jump_ts
 
     def __call__(self, ts, ts_interp, obs_interp, tmax):
 
@@ -386,6 +389,12 @@ class OnlineNCDE(eqx.Module):
         term = diffrax.ControlTerm(self.vector_field, control).to_ode()
         dt0 = None
         y0 = self.initial(control(ts[0]))
+
+        if self.use_jump_ts:
+            jump_ts = ts_interp
+        else:
+            jump_ts = None
+            
 
         saveat = diffrax.SaveAt(ts=ts)
         solution = diffrax.diffeqsolve(
@@ -396,7 +405,7 @@ class OnlineNCDE(eqx.Module):
             dt0,
             y0,
             stepsize_controller=diffrax.PIDController(
-                rtol=self.rtol, atol=self.atol#, jump_ts=ts
+                rtol=self.rtol, atol=self.atol, jump_ts=jump_ts
             ),
             saveat=saveat,
             adjoint=self.adjoint,
@@ -435,9 +444,10 @@ class PoolingONCDEClassifier(eqx.Module):
         num_classes: int,
         ncde_num_stacks: int = 1,
         ncde_activation: Callable | str = jnn.softplus,
-        classifier_activation: Callable | str = jnn.leaky_relu,
+        ncde_use_jump_ts: bool = False,
         ncde_weight_norm: bool = False,
         checkpoint_ncde: bool = False,
+        classifier_activation: Callable | str = jnn.leaky_relu,
         *,
         key,
         **kwargs
@@ -487,6 +497,7 @@ class PoolingONCDEClassifier(eqx.Module):
             key=ncde_key,
             activation=ncde_activation,
             weight_norm=ncde_weight_norm,
+            use_jump_ts=ncde_use_jump_ts,
         )
 
         if checkpoint_ncde:

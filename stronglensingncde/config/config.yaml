@@ -91,6 +91,7 @@ model:
     ncde_dtype: null
     ncde_rtol: 1e-3
     ncde_atol: 1e-3
+    ncde_use_jump_ts: False
     ncde_weight_norm: False
     classifier_width: 128
     classifier_depth: 2
