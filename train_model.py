@@ -26,6 +26,9 @@ def train(cfg: DictConfig) -> None:
     value = os.environ["NVIDIA_TF32_OVERRIDE"]
     print(f"NVIDIA_TF32_OVERRIDE is: {value}")
 
+    value = os.environ["XLA_FLAGS"]
+    print(f"XLA_FLAGS is: {value}")
+
     print(f"\nWorking directory : {os.getcwd()}")
     print(f"Hydra Output directory  : {hydra.core.hydra_config.HydraConfig.get().runtime.output_dir}\n")
 
