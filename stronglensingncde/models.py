@@ -31,6 +31,16 @@ def apply_WeightNorm(model):
 
     return output_model
 
+def _cast_tree(tree, from_dtype, to_dtype):
+    """
+    Recursively cast all JAX arrays in a pytree from one floating dtype to another.
+    """
+    def _cast(x):
+        if isinstance(x, jnp.ndarray) and x.dtype == from_dtype:
+            return x.astype(to_dtype)
+        return x
+    return jax.tree_map(_cast, tree)
+
 class SamplingWeights(eqx.Module):
     logits: Array
 
@@ -318,7 +328,26 @@ class StackedLinearInterpolation(eqx.Module):
 
     def __call__(self, t0, t1=None, left=True):
         return self.evaluate(t0, t1, left)
-        
+
+class MixedPrecisionWrapper(eqx.Module):
+    """
+    Wraps another Equinox module, casting inputs to float64 before the call
+    and casting outputs back to float32 after the call.
+    """
+    module: eqx.Module
+
+    def __call__(self, *args, **kwargs):
+        # Cast all float32 inputs to float64
+        args64 = _cast_tree(args, jnp.float32, jnp.float64)
+        kwargs64 = _cast_tree(kwargs, jnp.float32, jnp.float64)
+
+        # Forward through the wrapped module
+        output = self.module(*args64, **kwargs64)
+
+        # Cast float64 outputs back to float32
+        output32 = _cast_tree(output, jnp.float64, jnp.float32)
+        return output32
+
 class OnlineNCDE(eqx.Module):
     initial: StackedInitialHiddenState
     vector_field: StackedVectorField
@@ -351,6 +380,7 @@ class OnlineNCDE(eqx.Module):
         num_stacks = 1,
         use_jump_ts = False,
         throw=True,
+        cast_f64=False,
         *,
         key,
         **kwargs
@@ -366,6 +396,7 @@ class OnlineNCDE(eqx.Module):
             key=ikey,
             activation=activation,
         )
+
         vector_field = StackedVectorField(
             num_vector_fields=num_stacks,
             data_size=data_size,
@@ -379,6 +410,10 @@ class OnlineNCDE(eqx.Module):
             initial = apply_WeightNorm(initial)
             vector_field = apply_WeightNorm(vector_field)
         
+        if cast_f64:
+            initial = MixedPrecisionWrapper(initial)
+            vector_field = MixedPrecisionWrapper(vector_field)
+
         self.initial = initial
         self.vector_field = vector_field
         self.num_stacks = num_stacks
@@ -460,6 +495,7 @@ class PoolingONCDEClassifier(eqx.Module):
         ncde_pcoeff: float = 0.3,
         ncde_icoeff: float = 0.4,
         ncde_weight_norm: bool = False,
+        ncde_cast_f64: bool = False,
         checkpoint_ncde: bool = False,
         classifier_activation: Callable | str = jnn.leaky_relu,
         *,
@@ -515,6 +551,7 @@ class PoolingONCDEClassifier(eqx.Module):
             weight_norm=ncde_weight_norm,
             use_jump_ts=ncde_use_jump_ts,
             throw=ncde_throw,
+            cast_f64=ncde_cast_f64,
         )
 
         if checkpoint_ncde:

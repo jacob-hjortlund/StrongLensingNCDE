@@ -1,7 +1,7 @@
 import os
 import jax
 jax.config.update("jax_default_matmul_precision", "highest")
-#jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", True)
 
 import torch
 import optax
@@ -22,11 +22,10 @@ from omegaconf import DictConfig, OmegaConf
 
 @hydra.main(version_base=None, config_path="./stronglensingncde/config", config_name="config")
 def train(cfg: DictConfig) -> None:
-
-    value = os.environ["NVIDIA_TF32_OVERRIDE"]
+    value = os.getenv("NVIDIA_TF32_OVERRIDE", "<not set>")
     print(f"NVIDIA_TF32_OVERRIDE is: {value}")
 
-    value = os.environ["XLA_FLAGS"]
+    value = os.getenv("XLA_FLAGS", "<not set>")
     print(f"XLA_FLAGS is: {value}")
 
     print(f"\nWorking directory : {os.getcwd()}")

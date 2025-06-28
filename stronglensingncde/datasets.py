@@ -254,10 +254,10 @@ class HDF5TimeSeriesDataset(Dataset):
         sample_key = self.sample_keys[idx]
         sample_group = self.h5_file[sample_key]
 
-        flux = torch.tensor(sample_group['FLUX'][()], dtype=torch.float64)
-        flux_err = torch.tensor(sample_group['FLUX_ERR'][()], dtype=torch.float64)
-        detobs = torch.tensor(sample_group['DETOBS'][()], dtype=torch.float64)
-        t_mjd = torch.tensor(sample_group['TRANS_MJD'][()], dtype=torch.float64)
+        flux = torch.tensor(sample_group['FLUX'][()], dtype=torch.float32)
+        flux_err = torch.tensor(sample_group['FLUX_ERR'][()], dtype=torch.float32)
+        detobs = torch.tensor(sample_group['DETOBS'][()], dtype=torch.float32)
+        t_mjd = torch.tensor(sample_group['TRANS_MJD'][()], dtype=torch.float32)
         length = len(t_mjd)
         max_time = t_mjd[-1]
         try:
@@ -272,7 +272,7 @@ class HDF5TimeSeriesDataset(Dataset):
         else:
             redshift_type = 'all'
             
-        redshift = torch.tensor(redshift, dtype=torch.float64)
+        redshift = torch.tensor(redshift, dtype=torch.float32)
 
         trigger_idx = sample_group.attrs['TRIGGER_INDEX']
         trigger_idx = torch.tensor(trigger_idx, dtype=torch.long)
@@ -387,7 +387,7 @@ def collate_fn(batch, max_length=None, nmax=None, t_delta=0.001):
     valid_lightcurve_mask = torch.stack(valid_lightcurve_mask_list)
     trigger_idx = torch.tensor(trigger_idx_list, dtype=torch.long)
     lengths = torch.tensor(lengths_list, dtype=torch.long)
-    max_times = torch.tensor(max_time, dtype=torch.float64)
+    max_times = torch.tensor(max_time, dtype=torch.float32)
     peak_times = torch.stack(peak_times_list)
 
     # Get the lengths and determine max length.
