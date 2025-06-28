@@ -25,6 +25,7 @@ training:
     subsample_max_size: null
     min_num_detections: 2
     min_num_observations: 2
+    dtype: float32
   loss_settings:
     loss_components:
       - temporal_cross_entropy_loss

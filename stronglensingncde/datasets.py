@@ -71,6 +71,7 @@ class HDF5TimeSeriesDataset(Dataset):
         verbose: bool = True,
         min_num_detections: int = 2,
         min_num_observations: int = 2,
+        dtype: str = 'float32',
         **kwargs
     ):
         
@@ -111,7 +112,8 @@ class HDF5TimeSeriesDataset(Dataset):
             sample_redshift_probs = np.asarray(sample_redshift_probs)
         self.sample_redshift_probs = sample_redshift_probs
         self.rng = np.random.default_rng(seed=seed)
-        
+        self.dtype = getattr(torch, dtype)
+
         label_subset = set(classes) if classes else set()
         class_labels = set()
         class_label_counter = Counter()
@@ -254,10 +256,10 @@ class HDF5TimeSeriesDataset(Dataset):
         sample_key = self.sample_keys[idx]
         sample_group = self.h5_file[sample_key]
 
-        flux = torch.tensor(sample_group['FLUX'][()], dtype=torch.float32)
-        flux_err = torch.tensor(sample_group['FLUX_ERR'][()], dtype=torch.float32)
-        detobs = torch.tensor(sample_group['DETOBS'][()], dtype=torch.float32)
-        t_mjd = torch.tensor(sample_group['TRANS_MJD'][()], dtype=torch.float32)
+        flux = torch.tensor(sample_group['FLUX'][()], dtype=self.dtype)
+        flux_err = torch.tensor(sample_group['FLUX_ERR'][()], dtype=self.dtype)
+        detobs = torch.tensor(sample_group['DETOBS'][()], dtype=self.dtype)
+        t_mjd = torch.tensor(sample_group['TRANS_MJD'][()], dtype=self.dtype)
         length = len(t_mjd)
         max_time = t_mjd[-1]
         try:
@@ -272,7 +274,7 @@ class HDF5TimeSeriesDataset(Dataset):
         else:
             redshift_type = 'all'
             
-        redshift = torch.tensor(redshift, dtype=torch.float32)
+        redshift = torch.tensor(redshift, dtype=self.dtype)
 
         trigger_idx = sample_group.attrs['TRIGGER_INDEX']
         trigger_idx = torch.tensor(trigger_idx, dtype=torch.long)
@@ -373,7 +375,7 @@ def pad_last(ts_list, lengths, max_length, delta=None):
 
     return padded
 
-def collate_fn(batch, max_length=None, nmax=None, t_delta=0.001):
+def collate_fn(batch, max_length=None, nmax=None, t_delta=0.001, dtype='float32'):
     
     (
         t_list, flux_list, partial_ts_list, numeric_multiclass_labels_list,
@@ -381,13 +383,13 @@ def collate_fn(batch, max_length=None, nmax=None, t_delta=0.001):
         peak_times_list, valid_lightcurve_mask_list
     ) = zip(*batch)
 
-    
+    dtype = getattr(torch, dtype)
     numeric_binary_labels = torch.tensor(numeric_binary_labels_list, dtype=torch.int)
     numeric_multiclass_labels = torch.stack(numeric_multiclass_labels_list)
     valid_lightcurve_mask = torch.stack(valid_lightcurve_mask_list)
     trigger_idx = torch.tensor(trigger_idx_list, dtype=torch.long)
     lengths = torch.tensor(lengths_list, dtype=torch.long)
-    max_times = torch.tensor(max_time, dtype=torch.float32)
+    max_times = torch.tensor(max_time, dtype=dtype)
     peak_times = torch.stack(peak_times_list)
 
     # Get the lengths and determine max length.
@@ -500,6 +502,9 @@ def make_dataloader(
         shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        collate_fn=lambda batch: collate_fn(batch, max_length=max_length, nmax=max_obs),
+        collate_fn=lambda batch: collate_fn(
+            batch, max_length=max_length, nmax=max_obs,
+            t_delta=t_delta, dtype=dataset_kwargs.get('dtype', 'float32')
+        ),
         worker_init_fn=_worker_init_fn
     ), ds
