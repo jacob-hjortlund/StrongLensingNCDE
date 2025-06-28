@@ -52,6 +52,8 @@ training:
       gamma: 0.5
       eps: 1e-8
   optimizer_fn: adamw
+  accumulate_gradients: False
+  accumulate_gradients_steps: 1
   ncde_lr_schedule:
     fn: warmup_cosine_decay_schedule
     settings:

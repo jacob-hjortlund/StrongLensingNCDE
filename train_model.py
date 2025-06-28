@@ -146,6 +146,11 @@ def train(cfg: DictConfig) -> None:
         classifier_optimizer,
     )
 
+    if cfg['training']['accumulate_gradients']:
+        optimizer = optax.MultiSteps(
+            optimizer,
+            every_k_schedule=cfg['training']['accumulate_gradients_steps'],
+        )
     # ------------------------- Model Setup and Training ------------------------- #
 
     model_class = getattr(
