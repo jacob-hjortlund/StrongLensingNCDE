@@ -15,6 +15,19 @@ from jaxtyping import Array
 from collections.abc import Callable
 
 @eqx.filter_jit
+def find_first_leaf_with_path_substring(pytree, substring):
+    """
+    Return the first leaf whose key-path string contains `substring`,
+    or None if no such leaf exists.
+    """
+    leaves_with_paths, _ = jax.tree_util.tree_flatten_with_path(pytree)
+    for path, leaf in leaves_with_paths:
+        # keystr(path) turns e.g. (1, 'foo', 2) into "['1']['foo'][2]"
+        if substring in jax.tree_util.keystr(path):
+            return leaf
+    return None
+
+@eqx.filter_jit
 def tree_contains_inf(tree):
 
     isInf = jax.tree_util.tree_map(lambda x: jnp.any(jnp.isinf(x)), tree)
