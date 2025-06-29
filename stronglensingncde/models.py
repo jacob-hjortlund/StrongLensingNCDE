@@ -445,7 +445,7 @@ class OnlineNCDE(eqx.Module):
             term,
             self.solver,
             ts[0],
-            ts[-1],
+            tmax,
             dt0,
             y0,
             stepsize_controller=diffrax.PIDController(
