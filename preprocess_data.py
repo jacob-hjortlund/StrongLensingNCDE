@@ -8,7 +8,7 @@ from pathlib import Path
 from astropy.coordinates import SkyCoord
 
 jolteon_path = Path('/home/jacob/PhD/Projects/jolteon_model/Data/JOLTEON_V1')
-out_path = Path('/home/jacob/PhD/Projects/jolteon_model/Data/JOLTEON_V1_PREPROCESSED_V3')
+out_path = Path('/home/jacob/PhD/Projects/jolteon_model/Data/JOLTEON_V1_PREPROCESSED_V4')
 out_path.mkdir(parents=True, exist_ok=True)
 
 detection_limit = 5.
@@ -18,7 +18,7 @@ asinh_scale = 0.02
 test_size = 0.15
 random_state = 42
 max_images = 4
-flux_transform = lambda x: np.asinh(x/2)
+flux_transform = lambda x: np.asinh(x/12)
 flux_err_transform = np.log
 redshift_columns = [
     "PHOTOZ", "PHOTOZ_ERR",

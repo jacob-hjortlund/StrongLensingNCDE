@@ -435,7 +435,7 @@ class OnlineNCDE(eqx.Module):
         y0 = self.initial(control(ts[0]))
 
         if self.use_jump_ts:
-            jump_ts = ts_interp
+            jump_ts = ts
         else:
             jump_ts = None
             

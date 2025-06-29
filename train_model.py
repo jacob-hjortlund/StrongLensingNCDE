@@ -50,30 +50,40 @@ def train(cfg: DictConfig) -> None:
 
     stats = np.load(data_path / "train_statistics.npz", allow_pickle=True)['arr_0'].tolist()
 
-    flux_norm = datasets.create_normalization_func(stats, "TRANS_FLUX")
-    flux_err_norm = datasets.create_normalization_func(stats, "TRANS_FLUX_ERR")
+    #flux_norm = datasets.create_normalization_func(stats, "TRANS_FLUX")
+    #flux_err_norm = datasets.create_normalization_func(stats, "TRANS_FLUX_ERR")
     photoz_norm = datasets.create_normalization_func(stats, "TRANS_PHOTOZ")
     photoz_err_norm = datasets.create_normalization_func(stats, "TRANS_PHOTOZ_ERR")
     specz_norm = datasets.create_normalization_func(stats, "TRANS_SPECZ")
     specz_err_norm = photoz_err_norm
+    flux_transform = lambda x: np.asinh( 2*np.sinh(x) / 12)
 
-    redshift_norm = datasets.create_redshift_transform(
+    redshift_norm = datasets.create_redshift_norm(
         specz_norm, specz_err_norm, photoz_norm, photoz_err_norm
     )
 
     train_dataloader, train_dataset = datasets.make_dataloader(
         h5_path=train_path,
-        flux_transform=flux_norm,
-        flux_err_transform=flux_err_norm,
-        redshift_transform=redshift_norm,
+        flux_transform=flux_transform,
+        flux_norm='mean',
+        flux_err_norm='mean',
+        redshift_norm=redshift_norm,
         **cfg['training']['data_settings']
     )
 
+    if isinstance(train_dataset, torch.utils.data.dataset.Subset):
+        flux_norm = train_dataset.dataset.flux_norm
+        flux_err_norm = train_dataset.dataset.flux_err_norm
+    else:
+        flux_norm = train_dataset.flux_norm
+        flux_err_norm = train_dataset.flux_err_norm
+
     val_dataloader, val_dataset = datasets.make_dataloader(
         h5_path=val_path,
-        flux_transform=flux_norm,
-        flux_err_transform=flux_err_norm,
-        redshift_transform=redshift_norm,
+        flux_transform=flux_transform,
+        flux_norm=flux_norm,
+        flux_err_norm=flux_err_norm,
+        redshift_norm=redshift_norm,
         **cfg['training']['data_settings']
     )
 

@@ -19,9 +19,9 @@ def create_normalization_func(stats, key):
 
     return norm_func
 
-def create_redshift_transform(specz_norm, specz_err_norm, photoz_norm, photoz_err_norm):
+def create_redshift_norm(specz_norm, specz_err_norm, photoz_norm, photoz_err_norm):
 
-    def redshift_transform(redshift, redshift_type):
+    def redshift_norm(redshift, redshift_type):
 
         N_img, T, N_z = redshift.shape
         dtype, device = redshift.dtype, redshift.device
@@ -55,15 +55,16 @@ def create_redshift_transform(specz_norm, specz_err_norm, photoz_norm, photoz_er
 
         return redshift
     
-    return redshift_transform
+    return redshift_norm
 
 class HDF5TimeSeriesDataset(Dataset):
     def __init__(
         self,
         h5_file_path,
         flux_transform: callable = None,
-        flux_err_transform: callable = None,
-        redshift_transform: callable = None,
+        flux_norm: callable = 'mean',
+        flux_err_norm: callable = 'mean',
+        redshift_norm: callable = None,
         sample_redshift: bool = False,
         sample_redshift_probs: np.ndarray = None,
         seed: int = 42,
@@ -105,8 +106,9 @@ class HDF5TimeSeriesDataset(Dataset):
         self.max_length = 0
         self.n_max_images = 0
         self.flux_transform = flux_transform
-        self.flux_err_transform = flux_err_transform
-        self.redshift_transform = redshift_transform
+        self.flux_norm = flux_norm
+        self.flux_err_norm = flux_err_norm
+        self.redshift_norm = redshift_norm
         self.sample_redshift = sample_redshift
         if sample_redshift_probs:
             sample_redshift_probs = np.asarray(sample_redshift_probs)
@@ -126,6 +128,9 @@ class HDF5TimeSeriesDataset(Dataset):
             class_filtering_count = 0
             self.sample_keys = []
             self.key_to_label = {}
+
+            fluxes = []
+            flux_errs = []
 
             for sample_key in all_keys:
 
@@ -162,7 +167,28 @@ class HDF5TimeSeriesDataset(Dataset):
                     if len(t_mjd) > self.max_length:
                         self.max_length = len(t_mjd)
                     
+                    flux = f[sample_key]['FLUX'][()]
+                    flux_err = f[sample_key]['FLUX_ERR'][()]
 
+                    fluxes.append(flux)
+                    flux_errs.append(flux_err)
+            
+            if isinstance(flux_norm, str):
+                if flux_norm == 'mean':
+                    fluxes = np.concatenate(fluxes, axis=1)
+                    if self.flux_transform:
+                        fluxes = self.flux_transform(fluxes)
+
+                    flux_mean = np.nanmean(fluxes, axis=(0,1))
+                    flux_std = np.nanstd(fluxes, axis=(0,1))
+                    self.flux_norm = lambda x: (x - flux_mean) / flux_std
+
+            if isinstance(flux_err_norm, str):
+                if flux_err_norm == 'mean':
+                    flux_errs = np.concatenate(flux_errs, axis=1)
+                    flux_err_mean = np.nanmean(flux_errs, axis=(0,1))
+                    flux_err_std = np.nanstd(flux_errs, axis=(0,1))
+                    self.flux_err_norm = lambda x: (x - flux_err_mean) / flux_err_std
 
             class_labels.remove('None')
             n_labels = len(class_labels)
@@ -256,8 +282,18 @@ class HDF5TimeSeriesDataset(Dataset):
         sample_key = self.sample_keys[idx]
         sample_group = self.h5_file[sample_key]
 
-        flux = torch.tensor(sample_group['FLUX'][()], dtype=self.dtype)
-        flux_err = torch.tensor(sample_group['FLUX_ERR'][()], dtype=self.dtype)
+        flux = sample_group['FLUX'][()]
+        if self.flux_norm:
+            if self.flux_transform:
+                flux = self.flux_transform(flux)
+            flux = self.flux_norm(flux)
+        flux = torch.tensor(flux, dtype=self.dtype)
+
+        flux_err = sample_group['FLUX_ERR'][()]
+        if self.flux_err_norm:
+            flux_err = self.flux_err_norm(flux_err)
+        flux_err = torch.tensor(flux_err, dtype=self.dtype)
+
         detobs = torch.tensor(sample_group['DETOBS'][()], dtype=self.dtype)
         t_mjd = torch.tensor(sample_group['TRANS_MJD'][()], dtype=self.dtype)
         length = len(t_mjd)
@@ -288,13 +324,13 @@ class HDF5TimeSeriesDataset(Dataset):
         numeric_binary_label = 1 if binary_label == 'lensed' else 0
 
         # Apply individual transforms if provided
-        if self.flux_transform:
-            flux = self.flux_transform(flux)
-        if self.flux_err_transform:
-            flux_err = self.flux_err_transform(flux_err)
-        if self.redshift_transform:
+        #if self.flux_norm:
+        #    flux = self.flux_norm(flux)
+        #if self.flux_err_norm:
+        #    flux_err = self.flux_err_norm(flux_err)
+        if self.redshift_norm:
             try:
-                redshift = self.redshift_transform(redshift, redshift_type)
+                redshift = self.redshift_norm(redshift, redshift_type)
             except Exception as e:
                 print(f"Exception for {redshift_type}:", e)
 
