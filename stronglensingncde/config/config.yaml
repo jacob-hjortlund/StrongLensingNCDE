@@ -19,6 +19,7 @@ training:
     sample_redshift_probs: [1.0, 0.0, 0.0]
     max_obs: False
     t_delta: null
+    t_offset: 1e-8
     classes: null
     verbose: True
     subsample: False

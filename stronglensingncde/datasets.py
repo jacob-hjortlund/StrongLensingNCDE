@@ -375,7 +375,7 @@ def pad_last(ts_list, lengths, max_length, delta=None):
 
     return padded
 
-def collate_fn(batch, max_length=None, nmax=None, t_delta=0.001, dtype='float32'):
+def collate_fn(batch, max_length=None, nmax=None, t_delta=0.001, t_offset=1e-8, dtype='float32'):
     
     (
         t_list, flux_list, partial_ts_list, numeric_multiclass_labels_list,
@@ -397,6 +397,7 @@ def collate_fn(batch, max_length=None, nmax=None, t_delta=0.001, dtype='float32'
         max_length = lengths.max().item()
 
     padded_t = pad_last(t_list, lengths=lengths, max_length=max_length, delta=t_delta)
+    padded_t = padded_t + t_offset  # Offset to avoid zero times
 
     padded_flux = pad_last(flux_list, lengths=lengths, max_length=max_length)
     padded_flux = torch.permute(padded_flux, (0, 2, 1, 3))
@@ -471,6 +472,7 @@ def make_dataloader(
     subsample: bool = False,
     subsample_max_size: int = None,
     seed: int = 42,
+    t_offset: float = 1e-8,
     **dataset_kwargs
 ) -> DataLoader:
     """
@@ -504,7 +506,8 @@ def make_dataloader(
         pin_memory=pin_memory,
         collate_fn=lambda batch: collate_fn(
             batch, max_length=max_length, nmax=max_obs,
-            t_delta=t_delta, dtype=dataset_kwargs.get('dtype', 'float32')
+            t_delta=t_delta, t_offset=t_offset,
+            dtype=dataset_kwargs.get('dtype', 'float32')
         ),
         worker_init_fn=_worker_init_fn
     ), ds
