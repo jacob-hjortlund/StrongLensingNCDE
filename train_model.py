@@ -154,7 +154,6 @@ def train(cfg: DictConfig) -> None:
     )
 
     optimizer = optax.chain(
-        optax.clip_by_global_norm(10.0),
         ncde_optimizer,
         classifier_optimizer,
     )
