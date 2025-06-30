@@ -473,8 +473,6 @@ class OnlineNCDE(eqx.Module):
         term = diffrax.ControlTerm(self.vector_field, control).to_ode()
         dt0 = None
         x0 = control(ts[0])[0]
-        print(f"Initial x0 shape: {x0.shape}")
-        print(f"Metadata shape: {metadata.shape}")
         y0 = self.initial(x0, metadata)
 
         if self.use_jump_ts:
