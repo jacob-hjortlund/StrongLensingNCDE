@@ -182,7 +182,7 @@ class VectorField(eqx.Module):
         vf_output = self.vf(mlp_output)
         vf_output = self.final_activation(vf_output)
         if self.gated:
-            gate_output = self.gate(y)
+            gate_output = self.gate(mlp_output)
             gate_output = jnn.sigmoid(gate_output)
             vf_output = jnp.multiply(vf_output, gate_output)
         

@@ -272,8 +272,8 @@ def inner_loop(
                 exception_path.mkdir(parents=True, exist_ok=True)
 
                 names = (
-                    "times", "flux", "partial_ts", "trigger_idx",
-                    "lengths", "peak_times", "max_times", 
+                    "times", "flux", "partial_ts", "redshift",
+                    "trigger_idx", "lengths", "peak_times", "max_times", 
                     "binary_labels", "multiclass_labels",
                     "valid_lightcurve_mask"
                 )
