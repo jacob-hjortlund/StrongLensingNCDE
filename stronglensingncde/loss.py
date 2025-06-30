@@ -52,7 +52,14 @@ def class_weight_loss_fn(loss_fn: Callable, class_weights: ArrayLike, **kwargs) 
     def new_loss_fn(logits, label, representation, covariance, scale=1.0, **kwargs):
 
         class_weight = class_weights[label]
-        loss = class_weight * loss_fn(logits, label, scale, **kwargs)
+        loss = class_weight * loss_fn(
+            logits=logits,
+            label=label,
+            representation=representation,
+            covariance=covariance,
+            scale=scale,
+            **kwargs
+        )
 
         return loss
     
@@ -125,7 +132,7 @@ def lightcurve_representation_distance(
     return dm
 
 def temporal_predictions(
-    logits, label, representations, covariance, **kwargs
+    logits, label, **kwargs
 ):
     
     pred_check = jnp.argmax(logits, axis=-1) == label
@@ -375,7 +382,13 @@ def make_masked_timeseries_loss_fn(
             t_peak (float): Peak time of the time series, input to temporal_weight_fn.
         """
 
-        _loss = loss_fn(logits, label, representations, covariance, **loss_fn_kwargs)
+        _loss = loss_fn(
+            logits=logits,
+            label=label,
+            representation=representations,
+            covariance=covariance,
+            **loss_fn_kwargs
+        )
         _weights = temporal_weight_fn(times, t_peak, logits, label, **temporal_weight_kwargs)
 
         indeces = jnp.arange(_loss.shape[-1])
@@ -490,6 +503,7 @@ def make_loss_and_metric_fn(
     loss_modifier_kwargs: dict = {},
     metric_fns: list[Callable | str] = [temporal_predictions,],
     metric_fn_kwargs: dict = {},
+    class_weights = None,
 ):
 
     if type(loss_components) != list:
@@ -502,16 +516,21 @@ def make_loss_and_metric_fn(
         unity_loss_modifier = lambda fn, **kwargs: fn
         loss_modifiers = [unity_loss_modifier, ] 
 
+    if type(loss_modifiers) != list:
+        loss_modifiers = [loss_modifiers] * len(loss_components)
+
     if type(temporal_weight_fns) != list:
         temporal_weight_fns = [temporal_weight_fns] * len(loss_components)
 
     if type(metric_fns) != list:
         metric_fns = [metric_fns]
 
-    loss_modifier_kwargs = {
-        key: (jnp.array(value) if isinstance(value, list) else value)
-        for key, value in loss_modifier_kwargs.items()
-    }
+    if "class_weight_loss_fn" in loss_modifiers:
+        if class_weights is None:
+            raise ValueError(
+                "class_weight_loss_fn modifier requires class_weights to be provided."
+            )
+        loss_modifier_kwargs['class_weights'] = class_weights
 
     loss_components = make_function_list(loss_components)
     loss_modifiers = make_function_list(loss_modifiers)

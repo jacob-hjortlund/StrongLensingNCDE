@@ -73,9 +73,12 @@ def train(cfg: DictConfig) -> None:
     if isinstance(train_dataset, torch.utils.data.dataset.Subset):
         flux_norm = train_dataset.dataset.flux_norm
         flux_err_norm = train_dataset.dataset.flux_err_norm
+        class_frequencies = train_dataset.dataset.class_frequencies_array
     else:
         flux_norm = train_dataset.flux_norm
         flux_err_norm = train_dataset.flux_err_norm
+        class_frequencies = train_dataset.class_frequencies_array
+    class_weights = jnp.asarray(1./ class_frequencies)
 
     val_dataloader, val_dataset = datasets.make_dataloader(
         h5_path=val_path,
@@ -109,6 +112,7 @@ def train(cfg: DictConfig) -> None:
     # ---------------------------- Loss Function Setup --------------------------- #
 
     loss_fn = loss.make_loss_and_metric_fn(
+        class_weights=class_weights,
         **cfg['training']['loss_settings']
     )
 
