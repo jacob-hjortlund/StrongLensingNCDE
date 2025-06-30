@@ -122,7 +122,10 @@ class GRUDCell(eqx.Module):
         pass
 
 class VectorField(eqx.Module):
-    vf: eqx.Module
+    mlp: eqx.nn.MLP
+    vf: eqx.nn.Linear
+    gate: eqx.nn.Linear | None
+    final_activation: Callable
     data_size: int = eqx.field(static=True)
     hidden_size: int = eqx.field(static=True)
     gated: bool = eqx.field(static=True)
@@ -144,46 +147,48 @@ class VectorField(eqx.Module):
         self.data_size = data_size
         self.hidden_size = hidden_size
         self.gated = gated
+        self.final_activation = final_activation
 
-        vfkey, gatekey = jr.split(key, 2)
-        vf = eqx.nn.MLP(
+        depth = max(0, depth-2)
+
+        mlpkey, vfkey, gatekey = jr.split(key, 3)
+        self.mlp = eqx.nn.MLP(
             in_size=hidden_size,
-            out_size=hidden_size * data_size,
+            out_size=width_size,
             width_size=width_size,
             depth=depth,
             activation=activation,
-            final_activation=final_activation,
+            final_activation=activation,
+            key=mlpkey,
+        )
+
+        gate = None
+        if gated:
+            gate = eqx.nn.Linear(
+                in_features=width_size,
+                out_features=hidden_size * data_size,
+                key=gatekey
+            )
+        self.gate = gate
+        self.vf = eqx.nn.Linear(
+            in_features=width_size,
+            out_features=hidden_size * data_size,
             key=vfkey,
         )
 
-        if gated:
-            gate = eqx.nn.MLP(
-                in_size=hidden_size,
-                out_size=hidden_size * data_size,
-                width_size=width_size,
-                depth=depth,
-                activation=activation,
-                final_activation=jnn.sigmoid,
-                key=gatekey,
-            )
-
-            where = lambda mlps: mlps[0].layers[:-1]
-            get = lambda mlps: mlps[1].layers[:-1]
-            vf = eqx.nn.Shared((vf, gate), where=where, get=get)
-
-        self.vf = vf
-
     def __call__(self, t, y, args):
 
+        mlp_output = self.mlp(y)
+        vf_output = self.vf(mlp_output)
+        vf_output = self.final_activation(vf_output)
         if self.gated:
-            vf, gate = self.vf()
-            vf_output = vf(y)
-            gate_output = gate(y)
-            output = jnp.multiply(vf_output, gate_output).reshape(self.hidden_size, self.data_size)
-        else:
-            output = self.vf(y).reshape(self.hidden_size, self.data_size)
+            gate_output = self.gate(y)
+            gate_output = jnn.sigmoid(gate_output)
+            vf_output = jnp.multiply(vf_output, gate_output)
+        
+        vf_output = vf_output.reshape(self.hidden_size, self.data_size)
 
-        return output
+        return vf_output
     
 class StackedVectorField(eqx.Module):
     num_vector_fields: int = eqx.field(static=True)
