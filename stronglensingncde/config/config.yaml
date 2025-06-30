@@ -90,6 +90,7 @@ model:
     ncde_weight_norm: False
     ncde_throw: True
     ncde_cast_f64: False
+    ncde_gated: False
     classifier_width: 128
     classifier_depth: 2
     classifier_activation: gelu

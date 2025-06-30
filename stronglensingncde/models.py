@@ -122,9 +122,10 @@ class GRUDCell(eqx.Module):
         pass
 
 class VectorField(eqx.Module):
-    mlp: eqx.nn.MLP
-    data_size: int
-    hidden_size: int
+    vf: eqx.Module
+    data_size: int = eqx.field(static=True)
+    hidden_size: int = eqx.field(static=True)
+    gated: bool = eqx.field(static=True)
 
     def __init__(
         self,
@@ -134,6 +135,7 @@ class VectorField(eqx.Module):
         depth,
         activation=jnn.softplus,
         final_activation=jnn.tanh,
+        gated: bool = False,
         *,
         key,
         **kwargs
@@ -141,22 +143,45 @@ class VectorField(eqx.Module):
         super().__init__(**kwargs)
         self.data_size = data_size
         self.hidden_size = hidden_size
-        self.mlp = eqx.nn.MLP(
+        self.gated = gated
+
+        vfkey, gatekey = jr.split(key, 2)
+        vf = eqx.nn.MLP(
             in_size=hidden_size,
             out_size=hidden_size * data_size,
             width_size=width_size,
             depth=depth,
             activation=activation,
-            # Note the use of a tanh final activation function. This is important to
-            # stop the model blowing up. (Just like how GRUs and LSTMs constrain the
-            # rate of change of their hidden states.)
             final_activation=final_activation,
-            key=key,
+            key=vfkey,
         )
+
+        if gated:
+            gate = eqx.nn.MLP(
+                in_size=hidden_size,
+                out_size=hidden_size * data_size,
+                width_size=width_size,
+                depth=depth,
+                activation=activation,
+                final_activation=jnn.sigmoid,
+                key=gatekey,
+            )
+
+            where = lambda mlps: mlps[0].layers[:-1]
+            get = lambda mlps: mlps[1].layers[:-1]
+            vf = eqx.nn.Shared((vf, gate), where=where, get=get)
+
+        self.vf = vf
 
     def __call__(self, t, y, args):
 
-        output = self.mlp(y).reshape(self.hidden_size, self.data_size)
+        if self.gated:
+            vf, gate = self.vf()
+            vf_output = vf(y)
+            gate_output = gate(y)
+            output = jnp.multiply(vf_output, gate_output).reshape(self.hidden_size, self.data_size)
+        else:
+            output = self.vf(y).reshape(self.hidden_size, self.data_size)
 
         return output
     
@@ -173,6 +198,7 @@ class StackedVectorField(eqx.Module):
         depth: int | Sequence[int],
         activation=jnn.softplus,
         final_activation=jnn.tanh,
+        gated: bool = False,
         *,
         key,
         **kwargs
@@ -200,7 +226,8 @@ class StackedVectorField(eqx.Module):
                 depth=depth[0],
                 activation=activation,
                 final_activation=final_activation,
-                key=keys[0]
+                key=keys[0],
+                gated=gated
             )
         )
         if num_vector_fields > 1:
@@ -213,7 +240,8 @@ class StackedVectorField(eqx.Module):
                         depth=depth[i+1],
                         activation=activation,
                         final_activation=final_activation,
-                        key=keys[i+1]
+                        key=keys[i+1],
+                        gated=gated
                     )
                 )
         vector_fields = tuple(vector_fields)
@@ -381,6 +409,7 @@ class OnlineNCDE(eqx.Module):
         use_jump_ts = False,
         throw=True,
         cast_f64=False,
+        gated: bool = False,
         *,
         key,
         **kwargs
@@ -405,6 +434,7 @@ class OnlineNCDE(eqx.Module):
             depth=depth,
             key=fkey,
             activation=activation,
+            gated=gated,
         )
         if weight_norm:
             initial = apply_WeightNorm(initial)
@@ -496,6 +526,7 @@ class PoolingONCDEClassifier(eqx.Module):
         ncde_icoeff: float = 0.4,
         ncde_weight_norm: bool = False,
         ncde_cast_f64: bool = False,
+        ncde_gated: bool = False,
         checkpoint_ncde: bool = False,
         classifier_activation: Callable | str = jnn.leaky_relu,
         *,
@@ -552,6 +583,7 @@ class PoolingONCDEClassifier(eqx.Module):
             use_jump_ts=ncde_use_jump_ts,
             throw=ncde_throw,
             cast_f64=ncde_cast_f64,
+            gated=ncde_gated,
         )
 
         if checkpoint_ncde:
