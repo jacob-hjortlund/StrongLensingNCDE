@@ -268,8 +268,9 @@ class StackedVectorField(eqx.Module):
         return outputs
 
 class StackedInitialHiddenState(eqx.Module):
-    num_hidden_states: int = eqx.field(static=True)
     hidden_states: tuple[eqx.nn.MLP, ...]
+    num_hidden_states: int = eqx.field(static=True)
+    metadata_size: int = eqx.field(static=True)
 
     def __init__(
         self,
@@ -279,6 +280,7 @@ class StackedInitialHiddenState(eqx.Module):
         width_size: int | Sequence[int],
         depth: int | Sequence[int],
         activation=jnn.softplus,
+        metadata_size: int = 0,
         *,
         key,
         **kwargs
@@ -286,6 +288,7 @@ class StackedInitialHiddenState(eqx.Module):
         
         super().__init__(**kwargs)
         self.num_hidden_states = num_hidden_states
+        self.metadata_size = metadata_size
 
         if isinstance(hidden_size, int):
             hidden_sizes = tuple([hidden_size] * num_hidden_states)
@@ -301,7 +304,7 @@ class StackedInitialHiddenState(eqx.Module):
 
         hidden_states.append(
             eqx.nn.MLP(
-                in_size=data_size,
+                in_size=data_size+metadata_size,
                 out_size=hidden_sizes[0],
                 width_size=width_sizes[0],
                 depth=depths[0],
@@ -324,11 +327,16 @@ class StackedInitialHiddenState(eqx.Module):
         hidden_states = tuple(hidden_states)
         self.hidden_states = hidden_states
 
-    def __call__(self, x) -> tuple[Array, ...]:
+    def __call__(self, x, metadata) -> tuple[Array, ...]:
 
+        if self.metadata_size > 0:
+            x = jnp.concatenate(
+                [x, metadata], axis=-1
+            )
+        
         outputs = []
         outputs.append(
-            self.hidden_states[0](x[0])
+            self.hidden_states[0](x)
         )
         if self.num_hidden_states > 1:
             for i in range(self.num_hidden_states - 1):
@@ -457,12 +465,12 @@ class OnlineNCDE(eqx.Module):
         self.use_jump_ts = use_jump_ts
         self.throw = throw
 
-    def __call__(self, ts, ts_interp, obs_interp, tmax):
+    def __call__(self, ts, ts_interp, obs_interp, tmax, metadata):
 
         control = StackedLinearInterpolation(ts_interp, obs_interp, self.num_stacks)
         term = diffrax.ControlTerm(self.vector_field, control).to_ode()
         dt0 = None
-        y0 = self.initial(control(ts[0]))
+        y0 = self.initial(control(ts[0])[0], metadata)
 
         if self.use_jump_ts:
             jump_ts = ts
