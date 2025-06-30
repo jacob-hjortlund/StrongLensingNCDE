@@ -56,7 +56,6 @@ def train(cfg: DictConfig) -> None:
     photoz_err_norm = datasets.create_normalization_func(stats, "TRANS_PHOTOZ_ERR")
     specz_norm = datasets.create_normalization_func(stats, "TRANS_SPECZ")
     specz_err_norm = photoz_err_norm
-    flux_transform = lambda x: np.asinh( 2*np.sinh(x) / 12)
 
     redshift_norm = datasets.create_redshift_norm(
         specz_norm, specz_err_norm, photoz_norm, photoz_err_norm
@@ -64,7 +63,7 @@ def train(cfg: DictConfig) -> None:
 
     train_dataloader, train_dataset = datasets.make_dataloader(
         h5_path=train_path,
-        flux_transform=flux_transform,
+        flux_transform=None,
         flux_norm='mean',
         flux_err_norm='mean',
         redshift_norm=redshift_norm,
@@ -80,7 +79,7 @@ def train(cfg: DictConfig) -> None:
 
     val_dataloader, val_dataset = datasets.make_dataloader(
         h5_path=val_path,
-        flux_transform=flux_transform,
+        flux_transform=None,
         flux_norm=flux_norm,
         flux_err_norm=flux_err_norm,
         redshift_norm=redshift_norm,
