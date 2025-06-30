@@ -78,7 +78,7 @@ def train(cfg: DictConfig) -> None:
         flux_norm = train_dataset.flux_norm
         flux_err_norm = train_dataset.flux_err_norm
         class_frequencies = train_dataset.class_frequencies_array
-    class_weights = jnp.asarray(1./ class_frequencies)
+    class_weights = jnp.asarray(1./ class_frequencies) / len(class_frequencies)
 
     val_dataloader, val_dataset = datasets.make_dataloader(
         h5_path=val_path,
