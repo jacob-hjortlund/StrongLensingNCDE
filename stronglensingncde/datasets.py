@@ -23,9 +23,9 @@ def create_redshift_norm(specz_norm, specz_err_norm, photoz_norm, photoz_err_nor
 
     def redshift_norm(redshift, redshift_type):
 
-        N_img, T, N_z = redshift.shape
+        N_img, N_z = redshift.shape
         dtype, device = redshift.dtype, redshift.device
-        flag_shape = (N_img, T, 1)
+        flag_shape = (N_img, 1)
 
         if redshift_type == 'spec':
 
@@ -310,7 +310,7 @@ class HDF5TimeSeriesDataset(Dataset):
         else:
             redshift_type = 'all'
             
-        redshift = torch.tensor(redshift, dtype=self.dtype)
+        redshift = torch.tensor(redshift[:, 0, :], dtype=self.dtype)
 
         trigger_idx = sample_group.attrs['TRIGGER_INDEX']
         trigger_idx = torch.tensor(trigger_idx, dtype=torch.long)
@@ -329,18 +329,18 @@ class HDF5TimeSeriesDataset(Dataset):
         #if self.flux_err_norm:
         #    flux_err = self.flux_err_norm(flux_err)
         if self.redshift_norm:
-            try:
-                redshift = self.redshift_norm(redshift, redshift_type)
-            except Exception as e:
-                print(f"Exception for {redshift_type}:", e)
+            #try:
+            redshift = self.redshift_norm(redshift, redshift_type)
+            #except Exception as e:
+            #    print(f"Exception for {redshift_type}:", e)
 
 
-        partial_ts = torch.concat((flux_err, detobs, redshift), dim=-1)
+        partial_ts = torch.concat((flux_err, detobs), dim=-1)
         partial_ts = torch.permute(partial_ts, (1, 0, 2))
         flux = torch.permute(flux, (1,0,2))
 
         output = (
-            t_mjd, flux, partial_ts,
+            t_mjd, flux, partial_ts, redshift,
             numeric_multiclass_labels,
             numeric_binary_label,
             trigger_idx, length,
@@ -414,15 +414,18 @@ def pad_last(ts_list, lengths, max_length, delta=None):
 def collate_fn(batch, max_length=None, nmax=None, t_delta=0.001, t_offset=1e-8, dtype='float32'):
     
     (
-        t_list, flux_list, partial_ts_list, numeric_multiclass_labels_list,
-        numeric_binary_labels_list, trigger_idx_list, lengths_list, max_time,
-        peak_times_list, valid_lightcurve_mask_list
+        t_list, flux_list, partial_ts_list, redshift_list,
+        numeric_multiclass_labels_list, numeric_binary_labels_list,
+        trigger_idx_list, lengths_list, max_time,
+        peak_times_list, valid_lightcurve_mask_list, 
     ) = zip(*batch)
 
     dtype = getattr(torch, dtype)
     numeric_binary_labels = torch.tensor(numeric_binary_labels_list, dtype=torch.int)
     numeric_multiclass_labels = torch.stack(numeric_multiclass_labels_list)
     valid_lightcurve_mask = torch.stack(valid_lightcurve_mask_list)
+    redshift = torch.stack(redshift_list)
+    redshift = redshift.to(dtype)
     trigger_idx = torch.tensor(trigger_idx_list, dtype=torch.long)
     lengths = torch.tensor(lengths_list, dtype=torch.long)
     max_times = torch.tensor(max_time, dtype=dtype)
@@ -455,8 +458,14 @@ def collate_fn(batch, max_length=None, nmax=None, t_delta=0.001, t_offset=1e-8, 
         )
         lengths = torch.minimum(lengths, torch.tensor(nmax))
 
+    redshift = torch.where(
+        torch.isnan(redshift),
+        torch.zeros_like(redshift, dtype=dtype),
+        redshift
+    )
+
     output = (
-        padded_t, padded_flux, padded_partial_ts,
+        padded_t, padded_flux, padded_partial_ts, redshift,
         trigger_idx, lengths, peak_times, max_times,
         numeric_binary_labels, numeric_multiclass_labels,
         valid_lightcurve_mask
