@@ -401,6 +401,7 @@ class OnlineNCDE(eqx.Module):
     def __init__(
         self,
         data_size,
+        metadata_size,
         hidden_size,
         width_size,
         depth,
@@ -427,6 +428,7 @@ class OnlineNCDE(eqx.Module):
         initial = StackedInitialHiddenState(
             num_hidden_states=num_stacks,
             data_size=data_size,
+            metadata_size=metadata_size,
             hidden_size=hidden_size,
             width_size=width_size,
             depth=depth,
@@ -470,7 +472,10 @@ class OnlineNCDE(eqx.Module):
         control = StackedLinearInterpolation(ts_interp, obs_interp, self.num_stacks)
         term = diffrax.ControlTerm(self.vector_field, control).to_ode()
         dt0 = None
-        y0 = self.initial(control(ts[0])[0], metadata)
+        x0 = control(ts[0])[0]
+        print(f"Initial x0 shape: {x0.shape}")
+        print(f"Metadata shape: {metadata.shape}")
+        y0 = self.initial(x0, metadata)
 
         if self.use_jump_ts:
             jump_ts = ts
@@ -516,6 +521,7 @@ class PoolingONCDEClassifier(eqx.Module):
         self,
         input_feature_size: int,
         representation_size: int,
+        metadata_size: int,
         ncde_width: int,
         ncde_depth: int,
         ncde_solver: Callable | str,
@@ -575,6 +581,7 @@ class PoolingONCDEClassifier(eqx.Module):
         ncde = OnlineNCDE(
             num_stacks=ncde_num_stacks,
             data_size=input_feature_size,
+            metadata_size=metadata_size,
             hidden_size=representation_size,
             width_size=ncde_width,
             depth=ncde_depth,
@@ -608,11 +615,11 @@ class PoolingONCDEClassifier(eqx.Module):
             key=classifier_key,
         )
 
-    def __call__(self, ts, ts_interp, obs_interp, t_max, valid_mask):
+    def __call__(self, ts, ts_interp, obs_interp, t_max, redshifts, valid_mask):
 
         representations, solution = jax.vmap(
-            self.ncde, in_axes=(None, 0, 0, None)
-        )(ts, ts_interp, obs_interp, t_max) # (N_max_img, max_length, representation_size)
+            self.ncde, in_axes=(None, 0, 0, None, 0)
+        )(ts, ts_interp, obs_interp, t_max, redshifts) # (N_max_img, max_length, representation_size)
 
         solution_flags = solution.result._value
 

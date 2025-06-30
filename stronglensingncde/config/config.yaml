@@ -72,8 +72,9 @@ model:
   save_path: "${model.save_dir}/${model.name}"
   class: PoolingONCDEClassifier
   hyperparams:
-    input_feature_size: 33
+    input_feature_size: 30
     representation_size: 64
+    metadata_size: 3
     ncde_num_stacks: 1
     ncde_width: 128
     ncde_depth: 4

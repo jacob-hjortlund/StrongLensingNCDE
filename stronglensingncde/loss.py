@@ -569,6 +569,7 @@ def make_loss_and_metric_fn(
         max_s: jnp.ndarray,
         interp_s: jnp.ndarray,
         interp_ts: jnp.ndarray,
+        redshifts: jnp.ndarray,
         trigger_indices: jnp.ndarray,
         lengths: jnp.ndarray,
         labels: jnp.ndarray,
@@ -577,8 +578,8 @@ def make_loss_and_metric_fn(
     ):
         
         logits, representations, solution_flags = jax.vmap(
-            model, in_axes=(0, 0, 0, 0, 0)
-        )(s, interp_s, interp_ts, max_s, valid_lightcurve_mask)    # (N_batch, N_max_img, max_length, num_classes)
+            model, in_axes=(0, 0, 0, 0, 0, 0)
+        )(s, interp_s, interp_ts, max_s, redshifts, valid_lightcurve_mask)    # (N_batch, N_max_img, max_length, num_classes)
         
         covariance = batch_covariance(
             representations, valid_lightcurve_mask, lengths

@@ -97,8 +97,8 @@ def make_train_step(optimizer, loss_fn):
     def train_step(model, data, optimizer_state):
 
         (
-            times, flux, partial_ts, trigger_idx,
-            lengths, peak_times, max_times, 
+            times, flux, partial_ts, redshifts, 
+            trigger_idx, lengths, peak_times, max_times, 
             binary_labels, multiclass_labels,
             valid_lightcurve_mask
         ) = data
@@ -117,6 +117,7 @@ def make_train_step(optimizer, loss_fn):
             max_s,
             interp_s,
             interp_ts,
+            redshifts,
             trigger_idx,
             lengths,
             multiclass_labels,
@@ -139,8 +140,8 @@ def make_val_step(loss_fn):
     def val_step(model, data, optimizer_state):
         
         (
-            times, flux, partial_ts, trigger_idx,
-            lengths, peak_times, max_times, 
+            times, flux, partial_ts, redshifts,
+            trigger_idx, lengths, peak_times, max_times, 
             binary_labels, multiclass_labels,
             valid_lightcurve_mask
         ) = data
@@ -159,6 +160,7 @@ def make_val_step(loss_fn):
             max_s,
             interp_s,
             interp_ts,
+            redshifts,
             trigger_idx,
             lengths,
             multiclass_labels,
@@ -213,21 +215,22 @@ def inner_loop(
 
         if only_use_first_column:
             (
-                times, flux, partial_ts, trigger_idx,
-                lengths, peak_times, max_times, 
+                times, flux, partial_ts, redshifts,
+                trigger_idx, lengths, peak_times, max_times, 
                 binary_labels, multiclass_labels,
                 valid_lightcurve_mask
             ) = data
 
             flux = flux[:, 0:1]
             partial_ts = partial_ts[:, 0:1]
+            redshifts = redshifts[:, 0:1]
             peak_times = peak_times[:, 0:1]
             multiclass_labels = multiclass_labels[:, 0:1]
             valid_lightcurve_mask = valid_lightcurve_mask[:, 0:1]
 
             data = (
-                times, flux, partial_ts, trigger_idx,
-                lengths, peak_times, max_times, 
+                times, flux, partial_ts, redshifts,
+                trigger_idx, lengths, peak_times, max_times, 
                 binary_labels, multiclass_labels,
                 valid_lightcurve_mask
             )   
