@@ -32,7 +32,9 @@ training:
       - temporal_cross_entropy_loss
     loss_scales: [1.0]
     loss_modifiers: null
-    loss_modifier_kwargs: {}
+    loss_modifier_kwargs:
+      gamma: 1.5
+      eps: 1e-8
     loss_fn_kwargs: {}
     metric_fns:
       - temporal_predictions

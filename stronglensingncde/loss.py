@@ -15,15 +15,22 @@ def temporal_cross_entropy_loss(logits, label, representation, covariance, scale
 
     return loss
 
-def focalize_loss_fn(loss_fn: Callable, gamma: float = 1.0, **kwargs) -> Callable:
+def focalize_loss_fn(loss_fn: Callable, gamma: float = 1.0, eps=1e-8, **kwargs) -> Callable:
 
     def new_loss_fn(logits, label, representation, covariance, scale=1.0, **kwargs):
 
         probs = jax.nn.softmax(logits, axis=-1)
-        prob_true = probs[:, label]
-        scaling_factor = (1 - prob_true)**gamma
-        unscaled_loss = loss_fn(logits, label, scale, **kwargs)
-        loss = scaling_factor * unscaled_loss
+        prob_true = jnp.clip(probs[:, label], min=eps, max=1.0-eps)
+        focal_weight = _stable_focal_weight(prob_true, gamma, eps)
+        unscaled_loss = loss_fn(
+            logits=logits,
+            label=label,
+            representation=representation,
+            covariance=covariance,
+            scale=scale,
+            **kwargs
+        )
+        loss = focal_weight * unscaled_loss
 
         return loss
     
