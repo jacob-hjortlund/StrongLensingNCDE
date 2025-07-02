@@ -118,7 +118,160 @@ class GRUDCell(eqx.Module):
 
         self.use_bias = use_bias
         
-    def __call__(self, input, delay, mask, hidden):
+    def __call__(self, x, x_prev, x_mean, delay, mask, hidden):
+
+        # decay factors
+        gamma_x = jnp.exp(
+            -jnp.max(
+                jnp.zeros_like(self.idecay_weight),
+                self.idecay_weight * delay + self.idecay_bias
+            )
+        )
+        gamma_h = jnp.exp(
+            -jnp.max(
+                self.zeros_like(self.nbias),
+                self.hdecay(hidden)
+            )
+        )
+
+        # Impute missing values using decay and training mean
+        x_imputed = mask * x + (1 - mask) * ( gamma_x * x_prev + (1 - gamma_x) * x_mean )
+        
+        # hidden state decay
+        h = gamma_h * hidden
+
+        igates = jnp.split(self.igates(x_imputed), 3)
+        mgates = jnp.split(self.mgates(x_imputed), 3)
+        hgates = jnp.split(self.hgates(hidden), 3)
+
+        rt = jnn.sigmoid(igates[0] + hgates[0]+mgates[0])
+        zt = jnn.sigmoid(igates[1] + hgates[1] + mgates[1])
+        nt = jnn.tanh(igates[2] + rt * (hgates[2] + self.nbias) + mgates[2])
+        ht = (1 - zt) * h + zt * nt
+
+        return ht
+
+class OnlineGRUD(eqx.Module):
+    grud_cell: GRUDCell
+    hidden_size: int = eqx.field(static=True)
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        use_bias: bool = True,
+        *,
+        key: PRNGKeyArray,
+    ):
+        
+        grud_cell = GRUDCell(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            use_bias=use_bias,
+            key=key,
+        )
+        self.grud_cell = grud_cell
+        self.hidden_size = hidden_size
+
+    def __call__(self, x, x_mean, delay, mask):
+
+        n_steps = x.shape[0]
+        init_hidden_state = jnp.zeros((self.hidden_size,))
+        hidden_states = [
+            self.grud_cell(
+                x=x[0],
+                x_prev=x_mean,
+                x_mean=x_mean,
+                delay=delay[0],
+                mask=mask[0],
+                hidden=init_hidden_state
+            )
+        ]
+        for i in range(1, n_steps):
+            hidden_states.append(
+                self.grud_cell(
+                    x=x[i],
+                    x_prev=x[i-1],
+                    x_mean=x_mean,
+                    delay=delay[i],
+                    mask=mask[i],
+                    hidden=hidden_states[-1]
+                )
+            )
+
+        hidden_states = jnp.stack(hidden_states, axis=0)
+
+        return hidden_states
+
+class PoolingOnlineGRUDClassifier(eqx.Module):
+    grud: OnlineGRUD
+    classifier: eqx.nn.MLP
+    input_means: Array = eqx.field(static=True)
+
+    def __init__(
+        self,
+        input_feature_size: int,
+        representation_size: int,
+        grud_hidden_size: int,
+        grud_use_bias: bool = True,
+        classifier_width: int = 64,
+        classifier_depth: int = 2,
+        classifier_activation: Callable | str = jnn.leaky_relu,
+        num_classes: int = 10,
+        input_means: Array | None = None,
+        *,
+        key: PRNGKeyArray,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        grud_key, classifier_key = jr.split(key, 2)
+
+        grud = OnlineGRUD(
+            input_size=input_feature_size,
+            hidden_size=grud_hidden_size,
+            use_bias=grud_use_bias,
+            key=grud_key
+        )
+        self.grud = grud
+
+        self.classifier = eqx.nn.MLP(
+            in_size=2*representation_size,
+            out_size=num_classes,
+            width_size=classifier_width,
+            depth=classifier_depth,
+            activation=classifier_activation,
+            key=classifier_key
+        )
+        
+        if isinstance(input_means, jnp.ndarray):
+            self.input_means = input_means
+        else:
+            self.input_means = jnp.zeros((input_feature_size,))
+
+
+    def call(self, x, x_mean, delay, mask, valid_mask):
+        
+        representations = jax.vmap(self.grud)(x, x_mean, delay, mask)
+
+        pooled_representations = jnp.sum(representations, axis=0) / jnp.sum(valid_mask, axis=0)
+
+        contextualized_representations = jnp.concatenate(
+            [
+                representations,
+                jnp.broadcast_to(pooled_representations[None, :], representations.shape)
+            ],
+            axis=-1
+        )  
+
+        logits = jax.vmap(jax.vmap(self.classifier))(contextualized_representations) 
+
+        return logits, contextualized_representations
+
+    def transform_input(self, ts, ts_interp, obs_interp):
+
+        delta = 1
+
+    def __call__(self, ts, ts_interp, obs_interp, t_max, redshifts, valid_mask):
         pass
 
 class VectorField(eqx.Module):
