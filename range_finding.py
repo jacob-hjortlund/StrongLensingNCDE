@@ -87,7 +87,9 @@ def train(cfg: DictConfig) -> None:
 
 
     median_losses = np.median(losses, axis=0)
-    p25, p75 = np.percentile(losses, [25, 75], axis=0)
+
+    if len(losses) > 1:
+        p25, p75 = np.percentile(losses, [25, 75], axis=0)
 
     np.save(save_path / "range_finding_losses.npy", losses)
     np.save(save_path / "range_finding_lrs.npy", lrs[0])
@@ -95,24 +97,27 @@ def train(cfg: DictConfig) -> None:
     fig, ax = plt.subplots(ncols=2, figsize=(20, 5))
 
     ax[0].plot(lrs[0], median_losses, c=colors[0], label='Loss')
-    ax[0].fill_between(
-        lrs[0],
-        p25,
-        p75,
-        color=colors[0],
-        alpha=0.5,
-        label='IQR'
-    )
+
 
     ax[1].plot(lrs[0], median_losses, c=colors[0], label='Loss')
-    ax[1].fill_between(
-        lrs[0],
-        p25,
-        p75,
-        color=colors[0],
-        alpha=0.5,
-        label='IQR'
-    )
+    
+    if len(losses) > 1:
+        ax[0].fill_between(
+            lrs[0],
+            p25,
+            p75,
+            color=colors[0],
+            alpha=0.5,
+            label='IQR'
+        )
+        ax[1].fill_between(
+            lrs[0],
+            p25,
+            p75,
+            color=colors[0],
+            alpha=0.5,
+            label='IQR'
+        )
 
     ax[1].set_xscale('log')
     ax[1].set_yscale('log')
