@@ -1,10 +1,12 @@
 import os
 import jax
 import hydra
+import torch
 
 import numpy as np
 import seaborn as sns
 import jax.random as jr
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import stronglensingncde.loss as loss
 import stronglensingncde.utils as utils
@@ -36,29 +38,34 @@ def train(cfg: DictConfig) -> None:
 
     stats = np.load(data_path / "train_statistics.npz", allow_pickle=True)['arr_0'].tolist()
 
-    flux_norm = datasets.create_normalization_func(stats, "TRANS_FLUX")
-    flux_err_norm = datasets.create_normalization_func(stats, "TRANS_FLUX_ERR")
+    #flux_norm = datasets.create_normalization_func(stats, "TRANS_FLUX")
+    #flux_err_norm = datasets.create_normalization_func(stats, "TRANS_FLUX_ERR")
     photoz_norm = datasets.create_normalization_func(stats, "TRANS_PHOTOZ")
     photoz_err_norm = datasets.create_normalization_func(stats, "TRANS_PHOTOZ_ERR")
     specz_norm = datasets.create_normalization_func(stats, "TRANS_SPECZ")
     specz_err_norm = photoz_err_norm
 
-    redshift_norm = datasets.create_redshift_transform(
+    redshift_norm = datasets.create_redshift_norm(
         specz_norm, specz_err_norm, photoz_norm, photoz_err_norm
     )
 
     train_dataloader, train_dataset = datasets.make_dataloader(
         h5_path=train_path,
-        flux_transform=flux_norm,
-        flux_err_transform=flux_err_norm,
-        redshift_transform=redshift_norm,
+        flux_norm='mean',
+        flux_err_norm=f'mean',
+        redshift_norm=redshift_norm,
         **cfg['training']['data_settings']
     )
 
-
+    if isinstance(train_dataset, torch.utils.data.dataset.Subset):
+        train_dataset = train_dataset.dataset
+    
+    class_frequencies = train_dataset.class_frequencies_array
+    class_weights = jnp.asarray(1./ class_frequencies) / len(class_frequencies)
     # ---------------------------- Loss Function Setup --------------------------- #
 
     loss_fn = loss.make_loss_and_metric_fn(
+        class_weights=class_weights,
         **cfg['training']['loss_settings']
     )
 

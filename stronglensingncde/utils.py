@@ -241,6 +241,7 @@ def _lr_range_test(
     lr_schedule,
     train_loader,
     num_steps=200,
+    only_use_first_column=False,
 ):
 
     optimizer_state = optimizer.init(
@@ -253,7 +254,28 @@ def _lr_range_test(
         
 
         data = [output.numpy() for output in batch]
-        loss, aux, model, optimizer_state = train_step(
+        if only_use_first_column:
+            (
+                times, flux, partial_ts, redshifts,
+                trigger_idx, lengths, peak_times, max_times, 
+                binary_labels, multiclass_labels,
+                valid_lightcurve_mask
+            ) = data
+
+            flux = flux[:, 0:1]
+            partial_ts = partial_ts[:, 0:1]
+            redshifts = redshifts[:, 0:1]
+            peak_times = peak_times[:, 0:1]
+            multiclass_labels = multiclass_labels[:, 0:1]
+            valid_lightcurve_mask = valid_lightcurve_mask[:, 0:1]
+
+            data = (
+                times, flux, partial_ts, redshifts,
+                trigger_idx, lengths, peak_times, max_times, 
+                binary_labels, multiclass_labels,
+                valid_lightcurve_mask
+            )   
+        loss, aux, model, optimizer_state, gradients = train_step(
             model, data, optimizer_state
         )
 
@@ -272,7 +294,8 @@ def lr_range_test(
     lr_min=1e-7,
     lr_max=1.0,
     repeats=1,
-    optimizer="adamw"
+    optimizer="adamw",
+    only_use_first_column=False,
 ):
 
     optimizer = getattr(optax, optimizer)
@@ -304,6 +327,7 @@ def lr_range_test(
             lr_schedule,
             train_loader,
             num_steps,
+            only_use_first_column=only_use_first_column,
         )
 
         all_lrs[repeat] = lrs

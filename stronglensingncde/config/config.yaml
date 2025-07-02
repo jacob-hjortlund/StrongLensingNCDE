@@ -108,3 +108,4 @@ range_finding:
   lr_max: 1.0
   repeats: 10
   optimizer: adamw
+  only_use_first_column: "${training.training_settings.only_use_first_column}"
