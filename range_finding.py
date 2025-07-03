@@ -76,7 +76,11 @@ def train(cfg: DictConfig) -> None:
         cfg['model']['class']
     )
 
-    lrs, losses = utils.lr_range_test(
+    (
+        lrs, losses,
+        grad2weight_ratios,
+        update2weight_ratios
+    ) = utils.lr_range_test(
         rng_key=rng_key,
         model_class=model_class,
         model_hyperparams=cfg['model']['hyperparams'],
@@ -87,33 +91,56 @@ def train(cfg: DictConfig) -> None:
 
 
     median_losses = np.median(losses, axis=0)
+    median_grad2weight_ratios = np.median(grad2weight_ratios, axis=0)
+    median_update2weight_ratios = np.median(update2weight_ratios, axis=0)
 
     if len(losses) > 1:
-        p25, p75 = np.percentile(losses, [25, 75], axis=0)
+        lp25, lp75 = np.percentile(losses, [25, 75], axis=0)
+        gp25, gp75 = np.percentile(grad2weight_ratios, [25, 75], axis=0)
+        up25, up75 = np.percentile(update2weight_ratios, [25, 75], axis=0)
 
     np.save(save_path / "range_finding_losses.npy", losses)
     np.save(save_path / "range_finding_lrs.npy", lrs[0])
+    np.save(save_path / "range_finding_g2w_ratios.npy", grad2weight_ratios)
+    np.save(save_path / "range_finding_u2w_ratios.npy", update2weight_ratios)
 
-    fig, ax = plt.subplots(ncols=2, figsize=(20, 5))
+    fig, ax = plt.subplots(ncols=2, nrows=2, figsize=(20, 10))
+    ax=ax.flatten()
 
     ax[0].plot(lrs[0], median_losses, c=colors[0], label='Loss')
-
-
     ax[1].plot(lrs[0], median_losses, c=colors[0], label='Loss')
+    ax[2].plot(lrs[0], median_grad2weight_ratios, c=colors[0], label='Grad / Weight')
+    ax[3].plot(lrs[0], median_update2weight_ratios, c=colors[0], label='Update / Weight')
     
     if len(losses) > 1:
         ax[0].fill_between(
             lrs[0],
-            p25,
-            p75,
+            lp25,
+            lp75,
             color=colors[0],
             alpha=0.5,
             label='IQR'
         )
         ax[1].fill_between(
             lrs[0],
-            p25,
-            p75,
+            lp25,
+            lp75,
+            color=colors[0],
+            alpha=0.5,
+            label='IQR'
+        )
+        ax[2].fill_between(
+            lrs[0],
+            gp25,
+            gp75,
+            color=colors[0],
+            alpha=0.5,
+            label='IQR'
+        )
+        ax[3].fill_between(
+            lrs[0],
+            up25,
+            up75,
             color=colors[0],
             alpha=0.5,
             label='IQR'
@@ -121,12 +148,21 @@ def train(cfg: DictConfig) -> None:
 
     ax[1].set_xscale('log')
     ax[1].set_yscale('log')
+    ax[2].set_xscale('log')
+    ax[2].set_yscale('log')
+    ax[3].set_xscale('log')
+    ax[3].set_yscale('log')
+
     ax[0].legend()
     ax[1].legend()
+    ax[2].legend()
+    ax[3].legend()
 
-    ax[0].set_xlabel("Learning rate")
-    ax[1].set_xlabel("Learning rate")
+    ax[2].set_xlabel("Learning rate")
+    ax[3].set_xlabel("Learning rate")
     ax[0].set_ylabel("Training loss")
+    ax[2].set_ylabel("Gradient / Weight Ratio")
+    ax[3].set_ylabel("Update / Weight Ratio")
     fig.suptitle("LR range test")
     fig.tight_layout()
 

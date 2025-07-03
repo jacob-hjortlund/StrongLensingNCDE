@@ -250,6 +250,8 @@ def _lr_range_test(
 
     lrs = []
     losses = []
+    grad2weight_ratio = []
+    update2weight_ratio = []
     for step, batch in zip(trange(num_steps), train_loader):
         
 
@@ -279,10 +281,24 @@ def _lr_range_test(
             model, data, optimizer_state
         )
 
+        params, static = eqx.partition(model, eqx.is_array)
+        model_norm = optax.global_norm(params)
+        grad_norm = optax.global_norm(gradients)
+        
         lr = lr_schedule(step)
+        gw_ratio = grad_norm / model_norm
+        uw_ratio = lr*gw_ratio
+
         lrs.append(lr)
+        grad2weight_ratio.append(gw_ratio)
+        update2weight_ratio.append(uw_ratio)
         losses.append(float(loss))
-    return np.array(lrs), np.array(losses)
+
+    return (
+        np.array(lrs), np.array(losses),
+        np.array(grad2weight_ratio),
+        np.array(update2weight_ratio)
+    )
 
 def lr_range_test(
     rng_key,
@@ -308,7 +324,9 @@ def lr_range_test(
     train_step = training.make_train_step(optimizer, loss_fn)
     
     all_lrs = np.zeros((repeats, num_steps))
-    all_losses = np.zeros((repeats, num_steps))
+    all_losses = np.zeros_like(all_lrs)
+    all_grad2weight_ratios = np.zeros_like(all_lrs)
+    all_update2weight_ratios = np.zeros_like(all_lrs)
     
     for repeat in range(repeats):
         print(f"Repeat {repeat}")
@@ -320,7 +338,11 @@ def lr_range_test(
             hyperparams=model_hyperparams,
         )
 
-        lrs, losses = _lr_range_test(
+        (
+            lrs, losses,
+            grad2weight_ratios,
+            update2weight_ratios
+        ) = _lr_range_test(
             model,
             train_step,
             optimizer,
@@ -332,11 +354,10 @@ def lr_range_test(
 
         all_lrs[repeat] = lrs
         all_losses[repeat] = losses
+        all_grad2weight_ratios[repeat] = grad2weight_ratios
+        all_update2weight_ratios[repeat] = update2weight_ratios
 
-    #lrs = np.mean(lrs, axis=0)
-    #losses = np.mean(losses, axis=0)
-
-    return all_lrs, all_losses
+    return all_lrs, all_losses, all_grad2weight_ratios, all_update2weight_ratios
 
 def compute_day_snapshots(times: np.ndarray, trigger_idx: int) -> np.ndarray:
     """
