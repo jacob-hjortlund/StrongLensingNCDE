@@ -9,8 +9,10 @@ from jax.scipy.special import logsumexp
 
 def temporal_cross_entropy_loss(logits, label, representation, covariance, scale=1.0, **kwargs):
 
+    indeces = jnp.arange(logits.shape[-1])
+    mask = indeces == label
     log_probs = jax.nn.log_softmax(logits, axis=-1)
-    log_prob_true = log_probs[:, label]
+    log_prob_true = jnp.sum(mask*log_probs, axis=-1)
     loss = -scale * log_prob_true
 
     return loss
@@ -171,9 +173,12 @@ def earliest_stable_correct_prediction_time(logits, label, times, length, trigge
     length_mask = indeces < length
     trigger_mask = indeces >= trigger_idx
     valid_mask = length_mask & trigger_mask
-    correct_mask = pred_class == label
     t_max = times[length - 1]
 
+    pred_class = jnp.where(
+        valid_mask, pred_class, label
+    )
+    correct_mask = pred_class == label
     rev_cum = jnp.cumprod(correct_mask[::-1])               # (T,)
     consecutive_correct_mask = rev_cum[::-1].astype(bool)
 
@@ -191,6 +196,12 @@ def stable_correct_prediction(logits, label, length, trigger_idx):
     length_mask = indeces < length
     trigger_mask = indeces >= trigger_idx
     valid_mask = length_mask & trigger_mask
+    
+    pred_class = jnp.where(
+        valid_mask,
+        pred_class,
+        label
+    )
     correct_mask = pred_class == label
 
     rev_cum = jnp.cumprod(correct_mask[::-1])               # (T,)
