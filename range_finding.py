@@ -78,6 +78,7 @@ def train(cfg: DictConfig) -> None:
 
     (
         lrs, losses,
+        gradnorms,
         grad2weight_ratios,
         update2weight_ratios
     ) = utils.lr_range_test(
@@ -91,16 +92,17 @@ def train(cfg: DictConfig) -> None:
 
 
     median_losses = np.median(losses, axis=0)
-    median_grad2weight_ratios = np.median(grad2weight_ratios, axis=0)
+    median_gradnorms = np.median(gradnorms, axis=0)
     median_update2weight_ratios = np.median(update2weight_ratios, axis=0)
 
     if len(losses) > 1:
         lp25, lp75 = np.percentile(losses, [25, 75], axis=0)
-        gp25, gp75 = np.percentile(grad2weight_ratios, [25, 75], axis=0)
+        gp25, gp75 = np.percentile(gradnorms, [25, 75], axis=0)
         up25, up75 = np.percentile(update2weight_ratios, [25, 75], axis=0)
 
     np.save(save_path / "range_finding_losses.npy", losses)
     np.save(save_path / "range_finding_lrs.npy", lrs[0])
+    np.save(save_path / "range_finding_grad_norms.npy", gradnorms)
     np.save(save_path / "range_finding_g2w_ratios.npy", grad2weight_ratios)
     np.save(save_path / "range_finding_u2w_ratios.npy", update2weight_ratios)
 
@@ -109,7 +111,7 @@ def train(cfg: DictConfig) -> None:
 
     ax[0].plot(lrs[0], median_losses, c=colors[0], label='Loss')
     ax[1].plot(lrs[0], median_losses, c=colors[0], label='Loss')
-    ax[2].plot(lrs[0], median_grad2weight_ratios, c=colors[0], label='Grad / Weight')
+    ax[2].plot(lrs[0], median_gradnorms, c=colors[0], label='Grad. Norm')
     ax[3].plot(lrs[0], median_update2weight_ratios, c=colors[0], label='Update / Weight')
     
     if len(losses) > 1:
@@ -161,7 +163,7 @@ def train(cfg: DictConfig) -> None:
     ax[2].set_xlabel("Learning rate")
     ax[3].set_xlabel("Learning rate")
     ax[0].set_ylabel("Training loss")
-    ax[2].set_ylabel("Gradient / Weight Ratio")
+    ax[2].set_ylabel("Grad. Norm")
     ax[3].set_ylabel("Update / Weight Ratio")
     fig.suptitle("LR range test")
     fig.tight_layout()

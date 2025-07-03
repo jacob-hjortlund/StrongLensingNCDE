@@ -250,6 +250,7 @@ def _lr_range_test(
 
     lrs = []
     losses = []
+    grad_norms = []
     grad2weight_ratio = []
     update2weight_ratio = []
     for step, batch in zip(trange(num_steps), train_loader):
@@ -290,12 +291,14 @@ def _lr_range_test(
         uw_ratio = lr*gw_ratio
 
         lrs.append(lr)
+        grad_norms.append(grad_norm)
         grad2weight_ratio.append(gw_ratio)
         update2weight_ratio.append(uw_ratio)
         losses.append(float(loss))
 
     return (
         np.array(lrs), np.array(losses),
+        np.array(grad_norms),
         np.array(grad2weight_ratio),
         np.array(update2weight_ratio)
     )
@@ -325,6 +328,7 @@ def lr_range_test(
     
     all_lrs = np.zeros((repeats, num_steps))
     all_losses = np.zeros_like(all_lrs)
+    all_gradnorms = np.zeros_like(all_lrs)
     all_grad2weight_ratios = np.zeros_like(all_lrs)
     all_update2weight_ratios = np.zeros_like(all_lrs)
     
@@ -340,6 +344,7 @@ def lr_range_test(
 
         (
             lrs, losses,
+            gradnorms,
             grad2weight_ratios,
             update2weight_ratios
         ) = _lr_range_test(
@@ -354,6 +359,7 @@ def lr_range_test(
 
         all_lrs[repeat] = lrs
         all_losses[repeat] = losses
+        all_gradnorms[repeat] = gradnorms
         all_grad2weight_ratios[repeat] = grad2weight_ratios
         all_update2weight_ratios[repeat] = update2weight_ratios
 
