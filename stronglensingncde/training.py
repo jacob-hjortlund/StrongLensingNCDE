@@ -326,7 +326,7 @@ def inner_loop(
             step_string = (
                 f"Step: {step} | Loss: {loss:.2e} | " +
                 f"Grad. Norm: {grad_norm:.2f} | " +
-                f"Upd./Weight: {update2weight_ratio*100:.2f}% | " +
+                f"Upd./Weight: {update2weight_ratio*100:.2e}% | " +
                 f"Stable Acc.: {stable_accuracy*100:.2f}% | " +
                 f"T_0: {earliest_time:.2f} | " +
                 f"Stable T_0: {stable_earliest_time:.2f} | " +
@@ -498,7 +498,7 @@ def training_loop(
                 f"Train - " +
                 f"Loss: {avg_train_loss:.2e} | " +
                 f"Grad. Norm: {train_grad_norm:.2f} | " +
-                f"Upd./Weight: {train_update2weight_ratio*100:.2f}% | " +
+                f"Upd./Weight: {train_update2weight_ratio*100:.2e}% | " +
                 f"Stable Acc.: {train_stable_accuracy*100:.2f}% | " +
                 f"T_0: {train_earliest_time:.2f} | " +
                 f"Stable T_0: {train_stable_earliest_time:.2f} | " +
@@ -525,7 +525,7 @@ def training_loop(
                 f"Val   - " +
                 f"Loss: {avg_val_loss:.2e} | " +
                 f"Grad. Norm: {val_grad_norm:.2f} | " +
-                f"Upd./Weight: {val_update2weight_ratio*100:.2f}% | " +
+                f"Upd./Weight: {val_update2weight_ratio*100:.2e}% | " +
                 f"Stable Acc.: {val_stable_accuracy*100:.2f}% | " +
                 f"T_0: {val_earliest_time:.2f} | " +
                 f"Stable T_0: {val_stable_earliest_time:.2f} | " +
