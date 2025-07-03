@@ -195,6 +195,8 @@ def inner_loop(
     aux_vals = []
     failure_rate = []
     lrs = []
+    grad_norms = []
+    update2weight_ratios = []
 
     t_init = time.time()
     for step in range(number_of_steps):
@@ -239,9 +241,15 @@ def inner_loop(
             model, data, optimizer_state
         )
         has_gradients = not isinstance(gradients, type(None))
+        grad_norm = 0.
+        update2weight_ratio = 0.
         if has_gradients:
             grads_contain_inf = utils.tree_contains_inf(gradients)
             grads_contain_nan = utils.tree_contains_nan(gradients)
+            params, static = eqx.partition(model, eqx.is_array)
+            model_norm = optax.global_norm(params)
+            grad_norm = optax.global_norm(gradients)
+            update2weight_ratio = current_lr * grad_norm / model_norm
 
         step_solution_flags = aux[2]
         is_failure = step_solution_flags != 0.
@@ -300,6 +308,8 @@ def inner_loop(
         losses.append(step_losses)
         metrics.append(step_metrics)
         lrs.append(current_lr)
+        grad_norms.append(grad_norm)
+        update2weight_ratios.append(update2weight_ratio)
         
         step_duration = time.time() - t_step_init
 
@@ -315,12 +325,13 @@ def inner_loop(
 
             step_string = (
                 f"Step: {step} | Loss: {loss:.2e} | " +
-                f"Failure Rate: {step_failure_rate*100:.2f}% | " +
+                f"Grad. Norm: {grad_norm:.2f} | " +
+                f"Upd./Weight: {update2weight_ratio*100:.2f}% | " +
                 f"Stable Acc.: {stable_accuracy*100:.2f}% | " +
                 f"T_0: {earliest_time:.2f} | " +
                 f"Stable T_0: {stable_earliest_time:.2f} | " +
                 f"Flip Rate: {transition_rate*100:.2f}% | " +
-                f"N Flips: {num_transitions} | " +
+                f"N Flips: {num_transitions:.2f} | " +
                 f"TS Acc.: {ts_accuracy*100:.2f}% | " +
                 f"LR: {current_lr:.6e} | " +
                 f"Step Dur.: {step_duration / 60:.2f} min"
@@ -337,10 +348,14 @@ def inner_loop(
     metrics = np.array(metrics)
     failure_rate = np.array(failure_rate)
     lrs = np.array(lrs)
+    grad_norms = np.array(grad_norms)
+    update2weight_ratios = np.array(update2weight_ratios)
 
     avg_metrics = np.mean(metrics, axis=0)
     avg_losses = np.mean(losses, axis=0)
     avg_failure_rate = np.mean(failure_rate)
+    avg_grad_norm = np.mean(grad_norms)
+    avg_update2weight_ratios = np.mean(update2weight_ratios)
     init_lr, final_lr = lrs[0], lrs[-1]
     
     total_time = time.time() - t_init
@@ -349,7 +364,8 @@ def inner_loop(
     aux_vals = (
         avg_losses, avg_metrics, avg_step_time,
         losses, (init_lr, final_lr), metrics,
-        avg_failure_rate
+        avg_failure_rate, avg_grad_norm,
+        avg_update2weight_ratios
     )
 
     if verbose:
@@ -475,17 +491,19 @@ def training_loop(
             train_num_transitions = avg_train_metrics[4]
             train_ts_accuracy = avg_train_metrics[5]
             train_init_lr, train_final_lr = train_aux[4]
-            train_failure_rate = train_aux[-1]
+            train_grad_norm = train_aux[-2]
+            train_update2weight_ratio = train_aux[-1]
 
             train_string = (
                 f"Train - " +
                 f"Loss: {avg_train_loss:.2e} | " +
-                f"Failure Rate: {train_failure_rate*100:.2f}% | " +
+                f"Grad. Norm: {train_grad_norm:.2f} | " +
+                f"Upd./Weight: {train_update2weight_ratio*100:.2f}% | " +
                 f"Stable Acc.: {train_stable_accuracy*100:.2f}% | " +
                 f"T_0: {train_earliest_time:.2f} | " +
                 f"Stable T_0: {train_stable_earliest_time:.2f} | " +
                 f"Flip Rate: {train_transition_rate*100:.2f}% | " + 
-                f"N Flips: {train_num_transitions} | " +
+                f"N Flips: {train_num_transitions:.2f} | " +
                 f"TS Acc.: {train_ts_accuracy*100:.2f}% | " +
                 f"LR Range: {train_init_lr:.2e} - {train_final_lr:.2e} | " +
                 f"Step Dur.: {avg_train_step_time / 60:.2f} min"
@@ -500,12 +518,14 @@ def training_loop(
             val_num_transitions = avg_val_metrics[4]
             val_ts_accuracy = avg_val_metrics[5]
             val_init_lr, val_final_lr = val_aux[4]
-            val_failure_rate = val_aux[-1]
+            val_grad_norm = val_aux[-2]
+            val_update2weight_ratio = val_aux[-1]
 
             val_string = (
                 f"Val   - " +
                 f"Loss: {avg_val_loss:.2e} | " +
-                f"Failure Rate: {val_failure_rate*100:.2f}% | " +
+                f"Grad. Norm: {val_grad_norm:.2f} | " +
+                f"Upd./Weight: {val_update2weight_ratio*100:.2f}% | " +
                 f"Stable Acc.: {val_stable_accuracy*100:.2f}% | " +
                 f"T_0: {val_earliest_time:.2f} | " +
                 f"Stable T_0: {val_stable_earliest_time:.2f} | " +
