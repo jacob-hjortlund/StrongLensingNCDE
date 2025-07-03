@@ -363,7 +363,7 @@ def lr_range_test(
         all_grad2weight_ratios[repeat] = grad2weight_ratios
         all_update2weight_ratios[repeat] = update2weight_ratios
 
-    return all_lrs, all_losses, all_grad2weight_ratios, all_update2weight_ratios
+    return all_lrs, all_losses, all_gradnorms, all_grad2weight_ratios, all_update2weight_ratios
 
 def compute_day_snapshots(times: np.ndarray, trigger_idx: int) -> np.ndarray:
     """
