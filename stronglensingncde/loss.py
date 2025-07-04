@@ -2,6 +2,7 @@ import jax
 
 import equinox as eqx
 import jax.numpy as jnp
+import jax.random as jr
 
 from jaxtyping import ArrayLike
 from collections.abc import Callable
@@ -601,11 +602,13 @@ def make_loss_and_metric_fn(
         labels: jnp.ndarray,
         peak_times: jnp.ndarray,
         valid_lightcurve_mask: jnp.ndarray,
+        key,
     ):
         
+        keys = jr.split(key, s.shape[0])
         logits, representations, solution_flags = jax.vmap(
-            model, in_axes=(0, 0, 0, 0, 0, 0)
-        )(s, interp_s, interp_ts, max_s, redshifts, valid_lightcurve_mask)    # (N_batch, N_max_img, max_length, num_classes)
+            model, in_axes=(0, 0, 0, 0, 0, 0, 0)
+        )(s, interp_s, interp_ts, max_s, redshifts, valid_lightcurve_mask, keys)    # (N_batch, N_max_img, max_length, num_classes)
         
         covariance = batch_covariance(
             representations, valid_lightcurve_mask, lengths

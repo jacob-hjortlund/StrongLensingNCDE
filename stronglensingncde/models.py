@@ -45,6 +45,7 @@ def make_stacked_constant_diffusion(num_stacks, scale, dim):
 
     def _diffusion(t, y, args):
         diagonal = jnp.ones(dim) * scale
+        return diagonal
 
     def diffusion(t, y, args):
 
@@ -54,6 +55,7 @@ def make_stacked_constant_diffusion(num_stacks, scale, dim):
                 _diffusion(t, y, args)
             )
         outputs = tuple(outputs)
+        return outputs
     
     return diffusion
 
@@ -619,7 +621,9 @@ class OnlineNCDE(eqx.Module):
     dtmin: float = eqx.field(static=True)
     use_jump_ts: bool = eqx.field(static=True)
     throw: bool = eqx.field(static=True)
-    use_additive_noise = eqx.field(static=True)
+    use_additive_noise: bool = eqx.field(static=True)
+    noise_scale: float = eqx.field(static=True)
+    hidden_size: int = eqx.field(static=True)
 
     def __init__(
         self,
@@ -694,6 +698,8 @@ class OnlineNCDE(eqx.Module):
         self.use_jump_ts = use_jump_ts
         self.throw = throw
         self.use_additive_noise = use_additive_noise
+        self.noise_scale = noise_scale
+        self.hidden_size = hidden_size
 
         if use_additive_noise:
             if not noise_scale:
@@ -795,6 +801,9 @@ class PoolingONCDEClassifier(eqx.Module):
         ncde_weight_norm: bool = False,
         ncde_cast_f64: bool = False,
         ncde_gated: bool = False,
+        ncde_use_additive_noise: bool = False,
+        ncde_noise_scale: float = None,
+        ncde_dtmin: float = None,
         checkpoint_ncde: bool = False,
         classifier_activation: Callable | str = jnn.leaky_relu,
         *,
@@ -853,6 +862,9 @@ class PoolingONCDEClassifier(eqx.Module):
             throw=ncde_throw,
             cast_f64=ncde_cast_f64,
             gated=ncde_gated,
+            use_additive_noise=ncde_use_additive_noise,
+            noise_scale=ncde_noise_scale,
+            dtmin=ncde_dtmin,
         )
 
         if checkpoint_ncde:
@@ -869,11 +881,12 @@ class PoolingONCDEClassifier(eqx.Module):
             key=classifier_key,
         )
 
-    def __call__(self, ts, ts_interp, obs_interp, t_max, redshifts, valid_mask):
+    def __call__(self, ts, ts_interp, obs_interp, t_max, redshifts, valid_mask, key):
 
+        keys = jr.split(key, ts_interp.shape[0])
         representations, solution = jax.vmap(
-            self.ncde, in_axes=(None, 0, 0, None, 0)
-        )(ts, ts_interp, obs_interp, t_max, redshifts) # (N_max_img, max_length, representation_size)
+            self.ncde, in_axes=(None, 0, 0, None, 0, 0)
+        )(ts, ts_interp, obs_interp, t_max, redshifts, keys) # (N_max_img, max_length, representation_size)
 
         solution_flags = solution.result._value
 

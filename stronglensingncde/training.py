@@ -6,6 +6,7 @@ import diffrax
 import numpy as np
 import equinox as eqx  
 import jax.numpy as jnp
+import jax.random as jr
 import stronglensingncde.utils as utils
 
 from pathlib import Path
@@ -94,7 +95,7 @@ def make_train_step(optimizer, loss_fn):
     gradient_and_loss_fn = eqx.filter_value_and_grad(loss_fn, has_aux=True)
 
     @eqx.filter_jit(donate="all")
-    def train_step(model, data, optimizer_state):
+    def train_step(model, data, optimizer_state, key):
 
         (
             times, flux, partial_ts, redshifts, 
@@ -122,7 +123,8 @@ def make_train_step(optimizer, loss_fn):
             lengths,
             multiclass_labels,
             peak_times,
-            valid_lightcurve_mask
+            valid_lightcurve_mask,
+            key
         )
 
         updates, optimizer_state = optimizer.update(
@@ -137,7 +139,7 @@ def make_train_step(optimizer, loss_fn):
 def make_val_step(loss_fn):
     
     @eqx.filter_jit(donate="all-except-first")
-    def val_step(model, data, optimizer_state):
+    def val_step(model, data, optimizer_state, key):
         
         (
             times, flux, partial_ts, redshifts,
@@ -165,7 +167,8 @@ def make_val_step(loss_fn):
             lengths,
             multiclass_labels,
             peak_times,
-            valid_lightcurve_mask
+            valid_lightcurve_mask,
+            key,
         )
         
         return loss, aux, model, optimizer_state, None
@@ -177,6 +180,7 @@ def inner_loop(
     dataloader,
     optimizer_state,
     step_fn,
+    key,
     fixed_lr = None,
     number_of_steps = None,
     verbose = False,
@@ -197,6 +201,7 @@ def inner_loop(
     lrs = []
     grad_norms = []
     update2weight_ratios = []
+    keys = jr.split(key, number_of_steps)
 
     t_init = time.time()
     for step in range(number_of_steps):
@@ -238,7 +243,7 @@ def inner_loop(
             )   
         
         loss, aux, model, optimizer_state, gradients = step_fn(
-            model, data, optimizer_state
+            model, data, optimizer_state, keys[step]
         )
         has_gradients = not isinstance(gradients, type(None))
         grad_norm = 0.
@@ -380,6 +385,7 @@ def training_loop(
     optimizer,
     train_dataloader,
     val_dataloader,
+    key,
     number_of_epochs: int = 1,
     number_of_warmup_epochs: int = 1,
     steps_per_epoch: int = 10,
@@ -439,10 +445,14 @@ def training_loop(
     best_val_loss = np.inf
     best_val_epoch = 0
     wait = 0
+    keys = jr.split(key, total_number_of_epochs)
 
     t_training_init = time.time()
     for epoch in range(1, total_number_of_epochs+1):
         
+        epoch_key = keys[epoch]
+        train_key, val_key = jr.split(epoch_key, 2)
+
         if verbose_steps:
             print("Training")
 
@@ -459,7 +469,8 @@ def training_loop(
             verbose=verbose_steps,
             exception_path=save_path,
             only_use_first_column=only_use_first_column,
-            except_on_failure=except_on_failure
+            except_on_failure=except_on_failure,
+            key=train_key,
         )
         last_train_lr = train_aux[4][-1]
 
@@ -476,6 +487,7 @@ def training_loop(
             number_of_steps=val_steps_per_epoch,
             verbose=verbose_steps,
             exception_path=None,
+            key=val_key,
         )
 
         epoch_duration = time.time() - t_epoch_init
