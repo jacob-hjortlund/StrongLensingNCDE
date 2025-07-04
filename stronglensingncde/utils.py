@@ -349,12 +349,12 @@ def lr_range_test(
             grad2weight_ratios,
             update2weight_ratios
         ) = _lr_range_test(
-            model,
-            train_step,
-            optimizer,
-            lr_schedule,
-            train_loader,
-            num_steps,
+            model=model,
+            train_step=train_step,
+            optimizer=optimizer,
+            lr_schedule=lr_schedule,
+            train_loader=train_loader,
+            num_steps=num_steps,
             only_use_first_column=only_use_first_column,
             key=repeat_key
         )
