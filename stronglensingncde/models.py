@@ -725,7 +725,7 @@ class OnlineNCDE(eqx.Module):
             brownian_motion = StackedBrownianMotion(
                 num_stacks=self.num_stacks,
                 t0=ts[0],
-                t1=tmax,
+                t1=ts[-1],
                 tol=self.dtmin/2,
                 key=key
             )
