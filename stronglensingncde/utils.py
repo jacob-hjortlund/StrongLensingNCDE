@@ -240,6 +240,7 @@ def _lr_range_test(
     optimizer,
     lr_schedule,
     train_loader,
+    key,
     num_steps=200,
     only_use_first_column=False,
 ):
@@ -255,7 +256,7 @@ def _lr_range_test(
     update2weight_ratio = []
     for step, batch in zip(trange(num_steps), train_loader):
         
-
+        step_key, key = jr.split(key, 2)
         data = [output.numpy() for output in batch]
         if only_use_first_column:
             (
@@ -279,7 +280,7 @@ def _lr_range_test(
                 valid_lightcurve_mask
             )   
         loss, aux, model, optimizer_state, gradients = train_step(
-            model, data, optimizer_state
+            model, data, optimizer_state, step_key
         )
 
         params, static = eqx.partition(model, eqx.is_array)
@@ -335,7 +336,7 @@ def lr_range_test(
     for repeat in range(repeats):
         print(f"Repeat {repeat}")
 
-        model_key, rng_key = jr.split(rng_key)
+        model_key, repeat_key, rng_key = jr.split(rng_key, 3)
         model = make_model(
             key=model_key,
             model_class=model_class,
@@ -355,6 +356,7 @@ def lr_range_test(
             train_loader,
             num_steps,
             only_use_first_column=only_use_first_column,
+            key=repeat_key
         )
 
         all_lrs[repeat] = lrs
