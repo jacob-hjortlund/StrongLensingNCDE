@@ -41,6 +41,22 @@ def _cast_tree(tree, from_dtype, to_dtype):
         return x
     return jax.tree_map(_cast, tree)
 
+def make_stacked_constant_diffusion(num_stacks, scale, dim):
+
+    def _diffusion(t, y, args):
+        diagonal = jnp.ones(dim) * scale
+
+    def diffusion(t, y, args):
+
+        outputs = []
+        for i in range(num_stacks):
+            outputs.append(
+                _diffusion(t, y, args)
+            )
+        outputs = tuple(outputs)
+    
+    return diffusion
+
 class SamplingWeights(eqx.Module):
     logits: Array
 
@@ -523,6 +539,52 @@ class StackedLinearInterpolation(eqx.Module):
     def __call__(self, t0, t1=None, left=True):
         return self.evaluate(t0, t1, left)
 
+class StackedBrownianMotion(eqx.Module):
+    num_stacks: int = eqx.field(static=True)
+    brownian_motions: tuple[diffrax.VirtualBrownianTree, ...]
+
+    def __init__(self, num_stacks, t0, t1, tol, key):
+
+        super().__init__()
+        self.num_stacks = num_stacks
+        keys = jr.split(key, num_stacks)
+        brownian_motions = []
+        brownian_motions.append(
+            diffrax.VirtualBrownianTree(
+                t0, t1, tol=tol, shape=(), key=keys[0]
+            )
+        )
+        if num_stacks > 1:
+            for i in range(num_stacks-1):
+                brownian_motions.append(
+                    diffrax.VirtualBrownianTree(
+                        t0, t1, tol=tol, shape=(), key=keys[i+1]
+                    )
+                )
+        brownian_motions = tuple(brownian_motions)
+        self.brownian_motions = brownian_motions
+
+    def evaluate(self, t0, t1=None, left=True, use_levy=False):
+        outputs = []
+        outputs.append(
+            self.brownian_motions[0].evaluate(
+                t0=t0, t1=t1, left=left, use_levy=use_levy
+            )
+        )
+        if self.num_stacks > 1:
+            for i in range(self.num_stacks-1):
+                outputs.append(
+                    self.brownian_motions[i+1].evaluate(
+                        t0=t0, t1=t1, left=left, use_levy=use_levy
+                    )
+                )
+        outputs = tuple(outputs)
+
+        return outputs
+
+    def __call__(self, t0, t1=None, left=True):
+        return self.evaluate(t0, t1, left)
+
 class MixedPrecisionWrapper(eqx.Module):
     """
     Wraps another Equinox module, casting inputs to float64 before the call
@@ -547,14 +609,17 @@ class OnlineNCDE(eqx.Module):
     vector_field: StackedVectorField
     adjoint: diffrax.AbstractAdjoint
     solver: diffrax.AbstractSolver
+    diffusion_term: Callable | None
     num_stacks: int = eqx.field(static=True)
     max_steps: int = eqx.field(static=True)
     atol: float = eqx.field(static=True)
     rtol: float = eqx.field(static=True)
     pcoeff: float = eqx.field(static=True)
     icoeff: float = eqx.field(static=True)
+    dtmin: float = eqx.field(static=True)
     use_jump_ts: bool = eqx.field(static=True)
     throw: bool = eqx.field(static=True)
+    use_additive_noise = eqx.field(static=True)
 
     def __init__(
         self,
@@ -577,6 +642,9 @@ class OnlineNCDE(eqx.Module):
         throw=True,
         cast_f64=False,
         gated: bool = False,
+        use_additive_noise: bool = False,
+        noise_scale: float = None,
+        dtmin: float = None,
         *,
         key,
         **kwargs
@@ -622,13 +690,42 @@ class OnlineNCDE(eqx.Module):
         self.rtol = rtol
         self.pcoeff = pcoeff
         self.icoeff = icoeff
+        self.dtmin = dtmin
         self.use_jump_ts = use_jump_ts
         self.throw = throw
+        self.use_additive_noise = use_additive_noise
 
-    def __call__(self, ts, ts_interp, obs_interp, tmax, metadata):
+        if use_additive_noise:
+            if not noise_scale:
+                raise ValueError(
+                    f"Noise scale must be specified if using additive noise, currently {noise_scale}"
+                )
+            if not dtmin:
+                raise ValueError(
+                    f"Mininum step size must be fixed if using additive noise, currently {dtmin}"
+                )
+            self.diffusion_term = make_stacked_constant_diffusion(
+                num_stacks=num_stacks, scale=noise_scale, dim=hidden_size
+            )
+        else:
+            self.diffusion_term = None
+
+    def __call__(self, ts, ts_interp, obs_interp, tmax, metadata, key):
 
         control = StackedLinearInterpolation(ts_interp, obs_interp, self.num_stacks)
-        term = diffrax.ControlTerm(self.vector_field, control).to_ode()
+        terms = diffrax.ControlTerm(self.vector_field, control).to_ode()
+
+        if self.use_additive_noise:
+            brownian_motion = StackedBrownianMotion(
+                num_stacks=self.num_stacks,
+                t0=ts[0],
+                t1=tmax,
+                tol=self.dtmin/2,
+                key=key
+            )
+            diffusion = self.diffusion_term
+            terms = diffrax.MultiTerm(terms, diffrax.ControlTerm(diffusion, brownian_motion))
+
         dt0 = None
         x0 = control(ts[0])[0]
         y0 = self.initial(x0, metadata)
@@ -637,11 +734,11 @@ class OnlineNCDE(eqx.Module):
             jump_ts = ts
         else:
             jump_ts = None
-            
+        
 
         saveat = diffrax.SaveAt(ts=ts)
         solution = diffrax.diffeqsolve(
-            term,
+            terms,
             self.solver,
             ts[0],
             tmax,
@@ -649,7 +746,8 @@ class OnlineNCDE(eqx.Module):
             y0,
             stepsize_controller=diffrax.PIDController(
                 rtol=self.rtol, atol=self.atol, jump_ts=jump_ts,
-                pcoeff=self.pcoeff, icoeff=self.icoeff
+                pcoeff=self.pcoeff, icoeff=self.icoeff,
+                dtmin=self.dtmin,
             ),
             saveat=saveat,
             adjoint=self.adjoint,
