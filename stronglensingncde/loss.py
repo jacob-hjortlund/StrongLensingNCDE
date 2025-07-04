@@ -58,7 +58,7 @@ def dual_focalize_loss_fn(loss_fn: Callable, gamma: float = 1.0, **kwargs) -> Ca
 
 def class_weight_loss_fn(loss_fn: Callable, class_weights: ArrayLike, **kwargs) -> Callable:
 
-    def new_loss_fn(logits, label, representation, covariance, scale=1.0, **kwargs):
+    def new_loss_fn(logits, label, representation, covariance, scale, **kwargs):
 
         class_weight = class_weights[label]
         loss = class_weight * loss_fn(
@@ -129,11 +129,11 @@ def batch_covariance(representations, valid_lightcurve_masks, lengths):
     return cov
 
 def lightcurve_representation_distance(
-    logits, label, representations, cov, scale=1.0, **kwargs
+    logits, label, representation, covariance, scale=1.0, **kwargs
 ):
     
-    dr = jnp.diff(representations, axis=0)
-    dm = scale * jnp.sum(dr**2/cov, axis=-1)
+    dr = jnp.diff(representation, axis=0)
+    dm = scale * jnp.sum(dr**2/covariance, axis=-1)
     dm = jnp.concatenate(
         (jnp.zeros(1), dm)
     )
@@ -469,6 +469,14 @@ def make_batch_loss_fn(
             peak_times,
             representations,
             covariance
+            # logits=logits,
+            # labels=labels,
+            # trigger_idx=trigger_indices,
+            # length=lengths,
+            # times=times,
+            # t_peak=peak_times,
+            # representations=representations,
+            # covariance=covariance
         )   # (N_batch, N_max_img)
 
         batch_image_ts_loss = batch_image_ts_loss * valid_lightcurve_mask
@@ -606,15 +614,15 @@ def make_loss_and_metric_fn(
         losses = jnp.array(
             [
                 _loss_fn(
-                    logits,
-                    labels,
-                    trigger_indices,
-                    lengths,
-                    times,
-                    peak_times,
-                    valid_lightcurve_mask,
-                    representations,
-                    covariance
+                    logits=logits,
+                    labels=labels,
+                    trigger_indices=trigger_indices,
+                    lengths=lengths,
+                    times=times,
+                    peak_times=peak_times,
+                    valid_lightcurve_mask=valid_lightcurve_mask,
+                    representations=representations,
+                    covariance=covariance
                 ) for _loss_fn in batch_loss_fns
             ]
         )
