@@ -164,13 +164,14 @@ def train(cfg: DictConfig) -> None:
             every_k_schedule=cfg['training']['accumulate_gradients_steps'],
         )
     # ------------------------- Model Setup and Training ------------------------- #
+    model_key, train_key = jr.split(rng_key, 2)
 
     model_class = getattr(
         models,
         cfg['model']['class']
     )
     model = utils.make_model(
-        key=rng_key,
+        key=model_key,
         model_class=model_class,
         hyperparams=cfg['model']['hyperparams']
     )
@@ -196,6 +197,7 @@ def train(cfg: DictConfig) -> None:
         number_of_warmup_epochs=num_warmup_epochs,
         steps_per_epoch=steps_per_epoch,
         save_path=save_path,
+        key=train_key,
         **cfg['training']['training_settings']
     )
 
