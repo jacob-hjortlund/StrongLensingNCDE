@@ -612,6 +612,7 @@ class OnlineNCDE(eqx.Module):
     adjoint: diffrax.AbstractAdjoint
     solver: diffrax.AbstractSolver
     diffusion_term: Callable | None
+    inference: bool
     num_stacks: int = eqx.field(static=True)
     max_steps: int = eqx.field(static=True)
     atol: float = eqx.field(static=True)
@@ -713,15 +714,18 @@ class OnlineNCDE(eqx.Module):
             self.diffusion_term = make_stacked_constant_diffusion(
                 num_stacks=num_stacks, scale=noise_scale, dim=hidden_size
             )
+            self.inference = False
         else:
             self.diffusion_term = None
+            self.inference = True
 
     def __call__(self, ts, ts_interp, obs_interp, tmax, metadata, key):
 
         control = StackedLinearInterpolation(ts_interp, obs_interp, self.num_stacks)
         terms = diffrax.ControlTerm(self.vector_field, control).to_ode()
 
-        if self.use_additive_noise:
+        use_additive_noise = self.use_additive_noise and not self.inference
+        if use_additive_noise:
             brownian_motion = StackedBrownianMotion(
                 num_stacks=self.num_stacks,
                 t0=ts[0],

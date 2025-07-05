@@ -154,9 +154,11 @@ def make_val_step(loss_fn):
         s = s[:,0,:]
 
         max_s = max_times #+ (lengths-1) / 1000
+        
+        inference_model = eqx.nn.inference_mode(model)
 
         loss, aux = loss_fn(
-            model,
+            inference_model,
             times,
             s, 
             max_s,
@@ -294,8 +296,8 @@ def inner_loop(
                 for arr, name in zip(data, names):
                     np.save(exception_path / f"{name}.npy", arr)
 
-                for arr, name in zip(aux, [losses, metrics]):
-                    np.save(exception_path / f"{name}.npy", arr)
+                #for arr, name in zip(aux, ["losses", "metrics"]):
+                #    np.save(exception_path / f"{name}.npy", arr)
                 
                 np.save(exception_path / f"solution_flags.npy", step_solution_flags)
                 utils.save_model(exception_path / "model_at_failure.eqx", model)
