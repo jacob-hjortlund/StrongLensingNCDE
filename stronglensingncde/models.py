@@ -44,7 +44,6 @@ def _cast_tree(tree, from_dtype, to_dtype):
 def make_stacked_diffusion(num_stacks, additive_scale, multiplicative_scale):
 
     def _diffusion(t, y, args):
-        print(y.shape)
         additive = additive_scale * jnp.ones_like(y)
         multiplicative = multiplicative_scale * y
 
