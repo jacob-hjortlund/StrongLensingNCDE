@@ -709,7 +709,11 @@ class OnlineNCDE(eqx.Module):
         self.hidden_size = hidden_size
 
         if use_noise:
-            if not additive_noise_scale or not multiplicative_noise_scale:
+
+            is_invalid_add = additive_noise_scale == None
+            is_invalid_mul = multiplicative_noise_scale == None
+            is_invalid_noise = is_invalid_add or is_invalid_mul
+            if is_invalid_noise:
                 raise ValueError(
                     (
                         "Noise scales must be specified if using noise, " + 
