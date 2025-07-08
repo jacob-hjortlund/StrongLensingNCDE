@@ -94,8 +94,9 @@ model:
     ncde_throw: True
     ncde_cast_f64: False
     ncde_gated: False
-    ncde_use_additive_noise: False
-    ncde_noise_scale: 0.01
+    ncde_use_noise: False
+    ncde_additive_noise_scale: 0.01
+    ncde_multiplicative_noise_scale: 0.01
     ncde_dtmin: 1e-7
     classifier_width: 128
     classifier_depth: 2

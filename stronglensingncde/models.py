@@ -41,18 +41,21 @@ def _cast_tree(tree, from_dtype, to_dtype):
         return x
     return jax.tree_map(_cast, tree)
 
-def make_stacked_constant_diffusion(num_stacks, scale, dim):
+def make_stacked_diffusion(num_stacks, additive_scale, multiplicative_scale):
 
     def _diffusion(t, y, args):
-        diagonal = jnp.ones(dim) * scale
-        return diagonal
+        print(y.shape)
+        additive = additive_scale * jnp.ones_like(y)
+        multiplicative = multiplicative_scale * y
+
+        return additive + multiplicative
 
     def diffusion(t, y, args):
 
         outputs = []
         for i in range(num_stacks):
             outputs.append(
-                _diffusion(t, y, args)
+                _diffusion(t, y[i], args)
             )
         outputs = tuple(outputs)
         return outputs
@@ -622,8 +625,9 @@ class OnlineNCDE(eqx.Module):
     dtmin: float = eqx.field(static=True)
     use_jump_ts: bool = eqx.field(static=True)
     throw: bool = eqx.field(static=True)
-    use_additive_noise: bool = eqx.field(static=True)
-    noise_scale: float = eqx.field(static=True)
+    use_noise: bool = eqx.field(static=True)
+    additive_noise_scale: float = eqx.field(static=True)
+    multiplicative_noise_scale: float = eqx.field(static=True)
     hidden_size: int = eqx.field(static=True)
 
     def __init__(
@@ -647,8 +651,9 @@ class OnlineNCDE(eqx.Module):
         throw=True,
         cast_f64=False,
         gated: bool = False,
-        use_additive_noise: bool = False,
-        noise_scale: float = None,
+        use_noise: bool = False,
+        additive_noise_scale: float = None,
+        multiplicative_noise_scale: float = None,
         dtmin: float = None,
         *,
         key,
@@ -698,21 +703,28 @@ class OnlineNCDE(eqx.Module):
         self.dtmin = dtmin
         self.use_jump_ts = use_jump_ts
         self.throw = throw
-        self.use_additive_noise = use_additive_noise
-        self.noise_scale = noise_scale
+        self.use_noise = use_noise
+        self.additive_noise_scale = additive_noise_scale
+        self.multiplicative_noise_scale = multiplicative_noise_scale
         self.hidden_size = hidden_size
 
-        if use_additive_noise:
-            if not noise_scale:
+        if use_noise:
+            if not additive_noise_scale or not multiplicative_noise_scale:
                 raise ValueError(
-                    f"Noise scale must be specified if using additive noise, currently {noise_scale}"
+                    (
+                        "Noise scales must be specified if using noise, " + 
+                        f"currently additive noise scale is {additive_noise_scale} " +
+                        f"and multiplicative noise scale is {multiplicative_noise_scale}"
+                    )
                 )
             if not dtmin:
                 raise ValueError(
-                    f"Mininum step size must be fixed if using additive noise, currently {dtmin}"
+                    f"Mininum step size must be fixed if noise, currently {dtmin}"
                 )
-            self.diffusion_term = make_stacked_constant_diffusion(
-                num_stacks=num_stacks, scale=noise_scale, dim=hidden_size
+            self.diffusion_term = make_stacked_diffusion(
+                num_stacks=num_stacks,
+                additive_scale=additive_noise_scale,
+                multiplicative_scale=multiplicative_noise_scale
             )
             self.inference = False
         else:
@@ -724,8 +736,8 @@ class OnlineNCDE(eqx.Module):
         control = StackedLinearInterpolation(ts_interp, obs_interp, self.num_stacks)
         terms = diffrax.ControlTerm(self.vector_field, control).to_ode()
 
-        use_additive_noise = self.use_additive_noise and not self.inference
-        if use_additive_noise:
+        use_noise = self.use_noise and not self.inference
+        if use_noise:
             brownian_motion = StackedBrownianMotion(
                 num_stacks=self.num_stacks,
                 t0=ts[0],
@@ -805,8 +817,9 @@ class PoolingONCDEClassifier(eqx.Module):
         ncde_weight_norm: bool = False,
         ncde_cast_f64: bool = False,
         ncde_gated: bool = False,
-        ncde_use_additive_noise: bool = False,
-        ncde_noise_scale: float = None,
+        ncde_use_noise: bool = False,
+        ncde_additive_noise_scale: float = None,
+        ncde_multiplicative_noise_scale: float = None,
         ncde_dtmin: float = None,
         checkpoint_ncde: bool = False,
         classifier_activation: Callable | str = jnn.leaky_relu,
@@ -866,8 +879,9 @@ class PoolingONCDEClassifier(eqx.Module):
             throw=ncde_throw,
             cast_f64=ncde_cast_f64,
             gated=ncde_gated,
-            use_additive_noise=ncde_use_additive_noise,
-            noise_scale=ncde_noise_scale,
+            use_noise=ncde_use_noise,
+            additive_noise_scale=ncde_additive_noise_scale,
+            multiplicative_noise_scale=ncde_multiplicative_noise_scale,
             dtmin=ncde_dtmin,
         )
 
