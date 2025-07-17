@@ -569,11 +569,6 @@ def train_step_factory(optimizer, loss_fn):
         batch_keys = jr.split(key, batch_shape)
         batch_data = (ts, trigger_idx, lengths, metadata)
 
-        print(ts.shape)
-        print(trigger_idx.shape)
-        print(lengths.shape)
-        print(metadata.shape)
-        print(batch_labels.shape)
         (loss_value, aux), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(
             model, batch_data, batch_labels, batch_keys,
         )
@@ -623,11 +618,6 @@ def val_step_factory(loss_fn):
         batch_keys = jr.split(key, batch_shape)
         batch_data = (ts, trigger_idx, lengths, metadata)
 
-        print(ts.shape)
-        print(trigger_idx.shape)
-        print(lengths.shape)
-        print(metadata.shape)
-        print(batch_labels.shape)
         loss_value, aux = loss_fn(
             model, batch_data, batch_labels, batch_keys,
         )
