@@ -799,6 +799,7 @@ print(gru_num_params)
 
 model = gru
 epochs = 1000
+patience = 100
 warmup_epochs = 50
 total_epochs = epochs + warmup_epochs
 verbose = False
@@ -842,6 +843,7 @@ num_metrics = 8
 train_metrics = np.zeros((epochs, num_metrics))
 val_metrics = np.zeros_like(train_metrics)
 
+patience_counter = 0
 best_epoch = 0
 best_loss = np.inf
 
@@ -887,15 +889,31 @@ for epoch in range(epochs):
     if epoch_val_loss < best_loss:
         best_loss = epoch_val_loss
         best_epoch = epoch
+        patience_counter = 0
         utils.save_model("best_model_weights.eqx", model)
         np.save("train_metrics.npy", train_metrics)
         np.save("val_metrics.npy", val_metrics)
-    
+
     train_string = make_epoch_string("Train", epoch_train_metrics, train_time)
     val_string = make_epoch_string("Val", epoch_val_metrics, val_time)
 
     print(f"\n--------------- EPOCH {epoch+1} ---------------")
     print(train_string)
     print(val_string)
+
+    patience_counter += 1
+    if patience_counter >= patience:
+        best_train_metrics = train_metrics[best_epoch]
+        best_val_metrics = val_metrics[best_epoch]
+
+        train_string = make_epoch_string("Train", best_train_metrics, train_time)
+        val_string = make_epoch_string("Val", best_val_metrics, val_time)        
+
+        print(f"\n-----------------------------------------------")
+        print(f"{patience_counter} epochs since last improvement, stopping training.")
+        print(f"Best Epoch: {best_epoch}")
+        print(train_string)
+        print(val_string)
+    
 
 utils.save_model("last_model_weights.eqx", model)
