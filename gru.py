@@ -480,6 +480,11 @@ def train_step_factory(optimizer, loss_fn):
 
         ts = interp_ts[:, 0]
         metadata = redshifts[:, 0]
+
+        print(ts.shape)
+        print(trigger_idx.shape)
+        print(lengths.shape)
+        print(metadata.shape)
         batch_data = (ts, trigger_idx, lengths, metadata)
 
         (loss_value, aux), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(
@@ -525,6 +530,10 @@ def val_step_factory(loss_fn):
         metadata = redshifts[:, 0]
         batch_data = (ts, trigger_idx, lengths, metadata)
 
+        print(ts.shape)
+        print(trigger_idx.shape)
+        print(lengths.shape)
+        print(metadata.shape)
         loss_value, aux = loss_fn(
             model, batch_data, batch_labels
         )
