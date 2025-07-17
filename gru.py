@@ -145,11 +145,14 @@ val_dataloader, val_dataset = datasets.make_dataloader(
 class GRU(eqx.Module):
     cell: eqx.nn.GRUCell
     init: eqx.nn.MLP | None
+    init_dropout: eqx.nn.Dropout | eqx.nn.Identity
+    cell_dropout: eqx.nn.Dropout | eqx.nn.Identity
     init_layernorm: eqx.nn.LayerNorm | eqx.nn.Identity
     cell_layernorm: eqx.nn.LayerNorm | eqx.nn.Identity
     online: bool = eqx.field(static=True)
     use_metadata: bool = eqx.field(static=True)
     use_layernorm: bool = eqx.field(static=True)
+    use_dropout: bool = eqx.field(static=True)
 
     def __init__(
         self,
@@ -157,6 +160,8 @@ class GRU(eqx.Module):
         hidden_size,
         key,
         online=True,
+        use_dropout=False,
+        dropout_rate=None,
         use_layernorm=False,
         use_metadata=False,
         metadata_size=None,
@@ -181,6 +186,11 @@ class GRU(eqx.Module):
         else:
             self.cell_layernorm = eqx.nn.Identity()
 
+        if use_dropout:
+            self.cell_dropout = eqx.nn.Dropout(p=dropout_rate)
+        else:
+            self.cell_dropout = eqx.nn.Identity()
+
         self.use_metadata = use_metadata
         if use_metadata:
             self.init = eqx.nn.MLP(
@@ -192,35 +202,42 @@ class GRU(eqx.Module):
             )
             if use_layernorm:
                 self.init_layernorm = eqx.nn.LayerNorm(hidden_size)
+            else:
+                self.init_layernorm = eqx.nn.Identity()
+            if use_dropout:
+                self.init_dropout = eqx.nn.Dropout(p=dropout_rate)
+            else:
+                self.init_dropout = eqx.nn.Identity()
         else:
             self.init = None
-            self.init_layernorm = eqx.nn.Identity()
 
-        
-
-    def __call__(self, xs, metadata):#, key):
+    def __call__(self, xs, metadata, key):
 
         n_states = xs.shape[0]
         states = jnp.zeros(
             (n_states, self.cell.hidden_size)
         )
+        init_key, carry_key = jr.split(key, 2)
 
         if self.use_metadata:
             init_state = self.init(metadata)
             init_state = self.init_layernorm(init_state)
+            init_state = self.init_dropout(init_state, key=init_key)
         else:
             init_state = jnp.zeros(self.cell.hidden_size)
 
         def scan_fn(carry, input):
-            i, input_state, states = carry
+            i, key, input_state, states = carry
+            output_key, key = jr.split(key, 2)
             output_state = self.cell(input, input_state)
             output_state = self.cell_layernorm(output_state)
-            states = states.at[i].set(output_state)
-            output_carry = (i+1, output_state, states)
+            saved_output_state = self.cell_dropout(output_state, key=output_key)
+            states = states.at[i].set(saved_output_state)
+            output_carry = (i+1, key, output_state, states)
 
             return (output_carry, None) 
 
-        input_carry = (0, init_state, states)
+        input_carry = (0, carry_key, init_state, states)
 
         outputs, _ = jax.lax.scan(scan_fn, input_carry, xs)
         states = outputs[-1]
@@ -245,6 +262,8 @@ class GRUClassifier(eqx.Module):
         classifier_depth=1,
         online=True,
         use_layernorm=False,
+        use_dropout=False,
+        dropout_rate=None,
         use_metadata=False,
         metadata_size=None,
         init_width=None,
@@ -266,6 +285,8 @@ class GRUClassifier(eqx.Module):
                 hidden_size=hidden_size,
                 online=online,
                 use_layernorm=use_layernorm,
+                use_dropout=use_dropout,
+                dropout_rate=dropout_rate,
                 use_metadata=use_metadata,
                 metadata_size=metadata_size,
                 init_width=init_width,
@@ -282,6 +303,8 @@ class GRUClassifier(eqx.Module):
                         hidden_size=hidden_size,
                         online=online,
                         use_layernorm=use_layernorm,
+                        use_dropout=use_dropout,
+                        dropout_rate=dropout_rate,
                         use_metadata=use_metadata,
                         metadata_size=metadata_size,
                         init_width=init_width,
@@ -299,11 +322,16 @@ class GRUClassifier(eqx.Module):
             key=classifier_key
         )
     
-    def __call__(self, x, metadata):#, key):
+    def __call__(self, x, metadata, key):
 
         gru_input = x
         for gru in self.grus:
-            gru_input = gru(gru_input, metadata)
+            gru_key, key = jr.split(key, 2)
+            gru_input = gru(
+                xs=gru_input,
+                metadata=metadata,
+                key=gru_key
+            )
         gru_output = gru_input
 
         if self.online:
