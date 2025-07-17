@@ -758,9 +758,8 @@ for epoch in range(epochs):
     if verbose:
         print("\nValidation\n")
 
-    inference_model = eqx.nn.inference_mode(model)
-    _, _, val_loader, epoch_val_metrics = inner_loop(
-        model=inference_model,
+    model, opt_state, val_loader, epoch_val_metrics = inner_loop(
+        model=model,
         opt_state=opt_state,
         dataloader=val_loader,
         step_fn=make_val_step,
