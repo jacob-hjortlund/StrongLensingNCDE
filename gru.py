@@ -470,9 +470,6 @@ def train_step_factory(optimizer, loss_fn):
         flux = flux[:, 0:1]
         partial_ts = partial_ts[:, 0:1]
         redshifts = redshifts[:, 0:1]
-        peak_times = peak_times[:, 0:1]
-        multiclass_labels = multiclass_labels[:, 0:1]
-        valid_lightcurve_mask = valid_lightcurve_mask[:, 0:1]
         
         _, _, interp_ts = training.batch_mapped_interpolate_timeseries(
             times, flux, partial_ts
@@ -480,13 +477,13 @@ def train_step_factory(optimizer, loss_fn):
 
         ts = interp_ts[:, 0]
         metadata = redshifts[:, 0]
+        batch_data = (ts, trigger_idx, lengths, metadata)
 
         print(ts.shape)
         print(trigger_idx.shape)
         print(lengths.shape)
         print(metadata.shape)
-        batch_data = (ts, trigger_idx, lengths, metadata)
-
+        print(batch_labels.shape)
         (loss_value, aux), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(
             model, batch_data, batch_labels
         )
@@ -518,9 +515,6 @@ def val_step_factory(loss_fn):
         flux = flux[:, 0:1]
         partial_ts = partial_ts[:, 0:1]
         redshifts = redshifts[:, 0:1]
-        peak_times = peak_times[:, 0:1]
-        multiclass_labels = multiclass_labels[:, 0:1]
-        valid_lightcurve_mask = valid_lightcurve_mask[:, 0:1]
         
         _, _, interp_ts = training.batch_mapped_interpolate_timeseries(
             times, flux, partial_ts
@@ -534,6 +528,7 @@ def val_step_factory(loss_fn):
         print(trigger_idx.shape)
         print(lengths.shape)
         print(metadata.shape)
+        print(batch_labels.shape)
         loss_value, aux = loss_fn(
             model, batch_data, batch_labels
         )
@@ -577,6 +572,7 @@ def inner_loop(
             binary_labels, multiclass_labels,
             valid_lightcurve_mask
         ) = batch_data
+        multiclass_labels = multiclass_labels[:, 0:1]
         batch_labels = multiclass_labels.squeeze()
 
         step_t0 = time()
