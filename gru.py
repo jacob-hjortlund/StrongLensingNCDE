@@ -186,6 +186,7 @@ class GRU(eqx.Module):
         else:
             self.cell_layernorm = eqx.nn.Identity()
 
+        self.use_dropout = use_dropout
         if use_dropout:
             self.cell_dropout = eqx.nn.Dropout(p=dropout_rate)
         else:
