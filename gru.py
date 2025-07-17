@@ -144,14 +144,24 @@ val_dataloader, val_dataset = datasets.make_dataloader(
 
 class GRU(eqx.Module):
     cell: eqx.nn.GRUCell
+    init: eqx.nn.MLP | None
+    init_layernorm: eqx.nn.LayerNorm | eqx.nn.Identity
+    cell_layernorm: eqx.nn.LayerNorm | eqx.nn.Identity
     online: bool = eqx.field(static=True)
+    use_metadata: bool = eqx.field(static=True)
+    use_layernorm: bool = eqx.field(static=True)
 
     def __init__(
         self,
         input_size,
         hidden_size,
         key,
-        online = True,
+        online=True,
+        use_layernorm=False,
+        use_metadata=False,
+        metadata_size=None,
+        init_width=None,
+        init_depth=None,
         **kwargs
     ):
         
@@ -165,6 +175,29 @@ class GRU(eqx.Module):
             **kwargs
         )
 
+        self.use_layernorm = use_layernorm
+        if use_layernorm:
+            self.cell_layernorm = eqx.nn.LayerNorm(hidden_size)
+        else:
+            self.cell_layernorm = eqx.nn.Identity()
+
+        self.use_metadata = use_metadata
+        if use_metadata:
+            self.init = eqx.nn.MLP(
+                in_size=metadata_size,
+                out_size=hidden_size,
+                width_size=init_width,
+                depth=init_depth,
+                key=init_key
+            )
+            if use_layernorm:
+                self.init_layernorm = eqx.nn.LayerNorm(hidden_size)
+        else:
+            self.init = None
+            self.init_layernorm = eqx.nn.Identity()
+
+        
+
     def __call__(self, xs, metadata):#, key):
 
         n_states = xs.shape[0]
@@ -172,11 +205,16 @@ class GRU(eqx.Module):
             (n_states, self.cell.hidden_size)
         )
 
-        init_state = jnp.zeros(self.cell.hidden_size)
+        if self.use_metadata:
+            init_state = self.init(metadata)
+            init_state = self.init_layernorm(init_state)
+        else:
+            init_state = jnp.zeros(self.cell.hidden_size)
 
         def scan_fn(carry, input):
             i, input_state, states = carry
             output_state = self.cell(input, input_state)
+            output_state = self.cell_layernorm(output_state)
             states = states.at[i].set(output_state)
             output_carry = (i+1, output_state, states)
 
@@ -206,6 +244,11 @@ class GRUClassifier(eqx.Module):
         classifier_width=100,
         classifier_depth=1,
         online=True,
+        use_layernorm=False,
+        use_metadata=False,
+        metadata_size=None,
+        init_width=None,
+        init_depth=None,
         *,
         key,
         **kwargs
@@ -222,6 +265,11 @@ class GRUClassifier(eqx.Module):
                 input_size=input_size,
                 hidden_size=hidden_size,
                 online=online,
+                use_layernorm=use_layernorm,
+                use_metadata=use_metadata,
+                metadata_size=metadata_size,
+                init_width=init_width,
+                init_depth=init_depth,
                 key=gru_keys[0],
                 **kwargs
             )
@@ -233,6 +281,11 @@ class GRUClassifier(eqx.Module):
                         input_size=hidden_size,
                         hidden_size=hidden_size,
                         online=online,
+                        use_layernorm=use_layernorm,
+                        use_metadata=use_metadata,
+                        metadata_size=metadata_size,
+                        init_width=init_width,
+                        init_depth=init_depth,
                         key=gru_keys[i+1]
                     )
                 )
