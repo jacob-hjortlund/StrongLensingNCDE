@@ -1,5 +1,4 @@
 import os
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".99"
 
 import jax
 import torch
