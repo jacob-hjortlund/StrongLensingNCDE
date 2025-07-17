@@ -552,6 +552,12 @@ def train_step_factory(optimizer, loss_fn):
         flux = flux[:, 0:1]
         partial_ts = partial_ts[:, 0:1]
         redshifts = redshifts[:, 0:1]
+
+        dt = jnp.diff(times, axis=-1)
+        dt0 = jnp.zeros(dt.shape[0])[:,None]
+        dt = jnp.concatenate([dt0,dt], axis=-1)
+        dt = dt[:, None, :, None].shape
+        partial_ts = jnp.concatenate([dt, partial_ts], axis=-1)
         
         _, _, interp_ts = training.batch_mapped_interpolate_timeseries(
             times, flux, partial_ts
@@ -601,6 +607,12 @@ def val_step_factory(loss_fn):
         partial_ts = partial_ts[:, 0:1]
         redshifts = redshifts[:, 0:1]
         
+        dt = jnp.diff(times, axis=-1)
+        dt0 = jnp.zeros(dt.shape[0])[:,None]
+        dt = jnp.concatenate([dt0,dt], axis=-1)
+        dt = dt[:, None, :, None].shape
+        partial_ts = jnp.concatenate([dt, partial_ts], axis=-1)
+
         _, _, interp_ts = training.batch_mapped_interpolate_timeseries(
             times, flux, partial_ts
         )
@@ -758,13 +770,20 @@ key = jr.PRNGKey(0)
 gru_key, ncde_key, key = jr.split(key, 3)
 
 model_config = {
-    "input_size": 30,
+    "input_size": 31,
     "hidden_size": 100,
     "num_classes": num_classes,
     "num_gru_layers": 2,
     "classifier_width": 100,
     "classifier_depth": 0,
-    "online": True
+    "online": True,
+    "use_dropout": True,
+    "dropout_rate": 0.2,
+    "use_layernorm": True,
+    "use_metadata": True,
+    "metadata_size": 3,
+    "init_width": 32,
+    "init_depth": 0,
 }
 
 gru = GRUClassifier(
