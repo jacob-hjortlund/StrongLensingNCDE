@@ -556,7 +556,7 @@ def train_step_factory(optimizer, loss_fn):
         dt = jnp.diff(times, axis=-1)
         dt0 = jnp.zeros(dt.shape[0])[:,None]
         dt = jnp.concatenate([dt0,dt], axis=-1)
-        dt = dt[:, None, :, None].shape
+        dt = dt[:, None, :, None]
         partial_ts = jnp.concatenate([dt, partial_ts], axis=-1)
         
         _, _, interp_ts = training.batch_mapped_interpolate_timeseries(
@@ -610,7 +610,7 @@ def val_step_factory(loss_fn):
         dt = jnp.diff(times, axis=-1)
         dt0 = jnp.zeros(dt.shape[0])[:,None]
         dt = jnp.concatenate([dt0,dt], axis=-1)
-        dt = dt[:, None, :, None].shape
+        dt = dt[:, None, :, None]
         partial_ts = jnp.concatenate([dt, partial_ts], axis=-1)
 
         _, _, interp_ts = training.batch_mapped_interpolate_timeseries(
