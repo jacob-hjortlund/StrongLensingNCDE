@@ -481,10 +481,10 @@ def stable_accuracy(batch_logits, trigger_indeces, lengths, labels):
     return accuracy
 
 def make_loss_fn(weights, temporal_loss_fn):
-    def loss_fn(model, data, labels):
+    def loss_fn(model, data, labels, keys):
 
         ts, trigger_indeces, lengths, metadata = data
-        batch_logits = jax.vmap(model)(ts, metadata)
+        batch_logits = jax.vmap(model)(ts, metadata, keys)
         batch_logits = batch_logits[:, ::2]
         t = ts[:, ::2, 0]
 
@@ -539,6 +539,7 @@ def train_step_factory(optimizer, loss_fn):
         opt_state,
         batch_data,
         batch_labels,
+        key
     ):
         
         (
@@ -558,6 +559,8 @@ def train_step_factory(optimizer, loss_fn):
 
         ts = interp_ts[:, 0]
         metadata = redshifts[:, 0]
+        batch_shape = ts.shape[0]
+        batch_keys = jr.split(key, batch_shape)
         batch_data = (ts, trigger_idx, lengths, metadata)
 
         print(ts.shape)
@@ -566,7 +569,7 @@ def train_step_factory(optimizer, loss_fn):
         print(metadata.shape)
         print(batch_labels.shape)
         (loss_value, aux), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(
-            model, batch_data, batch_labels
+            model, batch_data, batch_labels, batch_keys,
         )
         updates, opt_state = optimizer.update(
             grads, opt_state, eqx.filter(model, eqx.is_array)
@@ -584,6 +587,7 @@ def val_step_factory(loss_fn):
         opt_state,
         batch_data,
         batch_labels,
+        key,
     ):
 
         (
@@ -603,6 +607,8 @@ def val_step_factory(loss_fn):
 
         ts = interp_ts[:, 0]
         metadata = redshifts[:, 0]
+        batch_shape = ts.shape[0]
+        batch_keys = jr.split(key, batch_shape)
         batch_data = (ts, trigger_idx, lengths, metadata)
 
         print(ts.shape)
@@ -611,7 +617,7 @@ def val_step_factory(loss_fn):
         print(metadata.shape)
         print(batch_labels.shape)
         loss_value, aux = loss_fn(
-            model, batch_data, batch_labels
+            model, batch_data, batch_labels, batch_keys,
         )
 
         return model, opt_state, loss_value, aux
@@ -628,6 +634,7 @@ def inner_loop(
     dataloader,
     step_fn,
     num_steps,
+    key,
     verbose=True
 ):
     
@@ -643,7 +650,7 @@ def inner_loop(
     t0 = time()
     for step in range(num_steps):
 
-
+        step_key, key = jr.split(key, 2)
         data = next(dataloader)
         batch_data = [output.numpy() for output in data]
 
@@ -663,6 +670,7 @@ def inner_loop(
             opt_state=opt_state,
             batch_data=batch_data,
             batch_labels=batch_labels,
+            key=step_key,
         )
 
         avg_ts_acc, avg_stable_acc, stable_acc, stable_t, num_obs = aux
@@ -820,7 +828,7 @@ best_loss = np.inf
 
 for epoch in range(epochs):
 
-    
+    train_key, val_key, key = jr.split(key, 3)
     train_t0 = time()
     if verbose:
         print("\nTraining\n")
@@ -831,6 +839,7 @@ for epoch in range(epochs):
         step_fn=make_train_step,
         num_steps=train_steps_per_epoch,
         verbose=verbose,
+        key=train_key,
     )
     train_metrics[epoch] = epoch_train_metrics
     train_time = time() - train_t0
@@ -839,6 +848,7 @@ for epoch in range(epochs):
     if verbose:
         print("\nValidation\n")
 
+    model = eqx.nn.inference_mode(model, value=True)
     model, opt_state, val_loader, epoch_val_metrics = inner_loop(
         model=model,
         opt_state=opt_state,
@@ -846,7 +856,9 @@ for epoch in range(epochs):
         step_fn=make_val_step,
         num_steps=val_steps_per_epoch,
         verbose=verbose,
+        key=val_key
     )
+    model = eqx.nn.inference_mode(model, value=False)
     val_metrics[epoch] = epoch_val_metrics
     if verbose:
         print("\n")
@@ -857,6 +869,8 @@ for epoch in range(epochs):
         best_loss = epoch_val_loss
         best_epoch = epoch
         utils.save_model("best_model_weights.eqx", model)
+        np.save("train_metrics.npy", train_metrics)
+        np.save("val_metrics.npy", val_metrics)
     
     train_string = make_epoch_string("Train", epoch_train_metrics, train_time)
     val_string = make_epoch_string("Val", epoch_val_metrics, val_time)
