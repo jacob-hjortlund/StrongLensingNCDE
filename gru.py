@@ -26,7 +26,7 @@ warnings.filterwarnings('ignore')
 
 with initialize(
     version_base=None,
-    config_path="./StrongLensingNCDE/stronglensingncde/config",
+    config_path="./stronglensingncde/config",
 ):
     cfg = compose(
         config_name="config",
