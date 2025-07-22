@@ -41,7 +41,7 @@ with initialize(
             "training.data_settings.batch_size=1024",
             "training.accumulate_gradients=False",
             "training.accumulate_gradients_steps=4",
-            #"training.data_settings.classes=[Ia,Ib/c]",
+            "training.data_settings.classes=[Ia,II,AGN,91bg,Ib/c,TDE,Iax,SLSN]",
             #"training.data_settings.subsample=True",
             "training.data_settings.num_workers=12",
             "training.data_settings.min_num_detections=3",
@@ -340,7 +340,7 @@ class GRUClassifier(eqx.Module):
         else:
             logits = self.classifier(gru_output)
 
-        return logits
+        return logits, gru_output
 
 def count_params(model: eqx.Module):
   num_params = sum(
@@ -413,6 +413,24 @@ def focal_weight_fn(logits, label, gamma=1.0, eps=1e-7,):
 
     return focal_weight
 
+def step_regularisation(rep_diff, cov):
+
+    cov = cov + 1e-8
+    inv_cov = jnp.diag(1./ cov)
+    step_val = rep_diff @ inv_cov @ rep_diff
+
+    return step_val
+
+def temporal_path_reg(ts_logits, trigger_idx, length, reps, cov):
+
+    mask = make_mask(ts_logits, trigger_idx, length)
+    rep_diffs = jnp.diff(reps, axis=0)
+    step_regs = jax.vmap(step_regularisation, in_axes=(0, None))(rep_diffs, cov)
+    step_regs = jnp.concatenate([jnp.zeros(1), step_regs])
+    path_reg = jnp.sum(mask * step_regs) / jnp.sum(mask)
+
+    return path_reg
+    
 def temporal_focal_cross_entropy_loss(ts_logits, trigger_idx, length, label):
 
     mask = make_mask(ts_logits, trigger_idx, length)
@@ -481,19 +499,87 @@ def stable_accuracy(batch_logits, trigger_indeces, lengths, labels):
 
     return accuracy
 
-def make_loss_fn(weights, temporal_loss_fn):
+def take(x, i):
+
+    return x[i]
+
+def onevsrest_metrics(
+    label,
+    batch_logits,
+    trigger_indeces,
+    lengths,
+    labels,
+):
+
+    last_logits = jax.vmap(take)(batch_logits, lengths-1)
+    pred_class = jnp.argmax(last_logits, axis=-1)
+
+    idx_true = labels == label
+    idx_pred = pred_class == label
+
+    stable_fracs = jax.vmap(
+        temporal_stable_accuracy,
+        in_axes=(0,0,0,None)
+    )(
+        batch_logits,
+        trigger_indeces,
+        lengths,
+        label
+    )
+    stable_fracs = jnp.where(
+        idx_true,
+        stable_fracs,
+        jnp.nan
+    )
+    stable_frac_sum = jnp.nansum(stable_fracs)
+    label_count = jnp.sum(idx_true)
+    stable_frac = jnp.nanmean(stable_fracs)
+
+    tp = jnp.sum(jnp.logical_and(idx_true, idx_pred))
+    fn = jnp.sum(jnp.logical_and(idx_true, ~idx_pred))
+    fp = jnp.sum(jnp.logical_and(~idx_true, idx_pred))
+
+    precision = tp / (tp + fp)
+    recall = tp / (tp + fn)
+    f1 = 2 * precision * recall / (precision + recall)
+    stable_f1 = 3 * precision * recall * stable_frac / (
+        precision * recall + precision * stable_frac + recall * stable_frac
+    )
+
+    f1 = jnp.where(jnp.isnan(f1), 0, f1)
+    stable_f1 =jnp.where(jnp.isnan(stable_f1), 0, stable_f1)
+
+    return (
+        tp, fn, fp, stable_frac_sum,
+        label_count, stable_frac, precision,
+        recall, f1, stable_f1
+    )
+
+def make_loss_fn(weights, temporal_loss_fn, num_classes, use_path_reg=False, path_reg_lambda=0.01):
     def loss_fn(model, data, labels, keys):
 
         ts, trigger_indeces, lengths, metadata = data
-        batch_logits = jax.vmap(model)(ts, metadata, keys)
+        batch_logits, batch_reps = jax.vmap(model)(ts, metadata, keys)
         batch_logits = batch_logits[:, ::2]
+        batch_reps = batch_reps[:, ::2]
         t = ts[:, ::2, 0]
+
+        batch_cov = jnp.std(batch_reps, axis=(0,1))
 
         ts_losses = jax.vmap(
             temporal_loss_fn
         )(batch_logits, trigger_indeces, lengths, labels)
         batch_weights = jnp.take(weights, labels)
         batch_loss = jnp.mean(batch_weights * ts_losses)
+
+        batch_path_reg = 0.
+        if use_path_reg:
+            path_regs = jax.vmap(
+                temporal_path_reg,
+                in_axes=(0, 0, 0, 0, None)
+            )(batch_logits, trigger_indeces, lengths, batch_reps, batch_cov)
+            batch_path_reg = path_reg_lambda * jnp.mean(batch_weights * path_regs)
+        batch_total_loss = batch_loss + batch_path_reg
 
         ts_accuracy = jax.vmap(
             temporal_accuracy
@@ -513,24 +599,53 @@ def make_loss_fn(weights, temporal_loss_fn):
             t, batch_logits, trigger_indeces,
             lengths, labels
         )
-        batch_earliest_stable_t = jnp.median(earliest_stable_t)
+        batch_earliest_stable_t = jnp.mean(earliest_stable_t)
 
         num_before_stable = jax.vmap(obs_until_stable_time)(
             t, batch_logits, trigger_indeces,
             lengths, labels
         )
-        batch_num_before_stable = jnp.median(num_before_stable)
+        batch_num_before_stable = jnp.mean(num_before_stable)
+
+        (
+            tp, fn, fp, stable_frac_sum,
+            label_count, stable_frac, precision,
+            recall, f1, stable_f1
+        ) = jax.vmap(
+                onevsrest_metrics,
+                in_axes=(0, None, None, None, None)
+        )(
+            jnp.arange(num_classes),
+            batch_logits,
+            trigger_indeces,
+            lengths,
+            labels,
+        )
+
+        batch_macro_stable_frac = jnp.nanmean(stable_frac)
+        batch_macro_f1 = jnp.nanmean(f1)
+        batch_macro_stable_f1 = jnp.nanmean(stable_f1)
 
         aux = (
+            batch_loss,
+            batch_path_reg,
             batch_ts_accuracy,
             batch_ts_stable_accuracy,
             batch_stable_accuracy,
             batch_earliest_stable_t,
-            batch_num_before_stable
+            batch_num_before_stable,
+            batch_macro_stable_frac,
+            batch_macro_f1,
+            batch_macro_stable_f1,
+            tp, fn, fp, stable_frac_sum, label_count
         )
 
-        return batch_loss, aux
+        return batch_total_loss, aux
     return loss_fn
+
+def scale_tree(scalar, tree):
+
+    return jax.tree.map(lambda x: scalar * x, tree)
 
 def train_step_factory(optimizer, loss_fn):
     
@@ -538,6 +653,7 @@ def train_step_factory(optimizer, loss_fn):
     def make_train_step(
         model,
         opt_state,
+        transform_state,
         batch_data,
         batch_labels,
         key
@@ -576,17 +692,18 @@ def train_step_factory(optimizer, loss_fn):
         updates, opt_state = optimizer.update(
             grads, opt_state, eqx.filter(model, eqx.is_array)
         )
+        updates = scale_tree(transform_state.scale, updates)
         model = eqx.apply_updates(model, updates)
     
-        return model, opt_state, loss_value, aux
+        return model, opt_state, transform_state, loss_value, aux
 
     return make_train_step
-
 def val_step_factory(loss_fn):
     @eqx.filter_jit(donate="all-except-first")
     def make_val_step(
         model,
         opt_state,
+        transform_state,
         batch_data,
         batch_labels,
         key,
@@ -619,13 +736,15 @@ def val_step_factory(loss_fn):
         batch_keys = jr.split(key, batch_shape)
         batch_data = (ts, trigger_idx, lengths, metadata)
 
+
         loss_value, aux = loss_fn(
             model, batch_data, batch_labels, batch_keys,
         )
 
-        return model, opt_state, loss_value, aux
+        return model, opt_state, transform_state, loss_value, aux
     
     return make_val_step
+
 
 def infinite_loader(loader):
     while True:
@@ -634,19 +753,32 @@ def infinite_loader(loader):
 def inner_loop(
     model,
     opt_state,
+    transform_state,
     dataloader,
     step_fn,
     num_steps,
     key,
+    num_classes,
     verbose=True
 ):
     
-    epoch_loss = np.zeros(num_steps)
+    epoch_total_loss = np.zeros(num_steps)
+    epoch_temporal_loss = np.zeros(num_steps)
+    epoch_path_reg = np.zeros(num_steps)
     epoch_ts_acc = np.zeros(num_steps)
     epoch_avg_stable_acc = np.zeros(num_steps)
     epoch_stable_acc = np.zeros(num_steps)
     epoch_stable_t = np.zeros(num_steps)
     epoch_num_obs = np.zeros(num_steps)
+    epoch_macro_stable_acc = np.zeros(num_steps)
+    epoch_macro_f1 = np.zeros(num_steps)
+    epoch_macro_stable_f1 = np.zeros(num_steps)
+    epoch_tp = np.zeros(num_classes)
+    epoch_fn = np.zeros(num_classes)
+    epoch_fp = np.zeros(num_classes)
+    epoch_stable_frac_sum = np.zeros(num_classes)
+    epoch_label_count = np.zeros(num_classes)
+
     epoch_data_time = np.zeros(num_steps)
     epoch_step_time = np.zeros(num_steps)
 
@@ -668,23 +800,41 @@ def inner_loop(
 
         step_t0 = time()
         data_time = step_t0 - t0
-        model, opt_state, loss_value, aux = step_fn(
+        model, opt_state, transform_state, loss_value, aux = step_fn(
             model=model,
             opt_state=opt_state,
+            transform_state=transform_state,
             batch_data=batch_data,
             batch_labels=batch_labels,
             key=step_key,
         )
 
-        avg_ts_acc, avg_stable_acc, stable_acc, stable_t, num_obs = aux
+        (
+            temporal_loss, path_reg,
+            avg_ts_acc, avg_stable_acc,
+            stable_acc, stable_t, num_obs,
+            macro_stable_acc, macro_f1,
+            macro_stable_f1, tp, fn,
+            fp, stable_frac_sum, label_count
+        ) = aux
         
-        epoch_loss[step] = loss_value
+        epoch_total_loss[step] = loss_value
+        epoch_temporal_loss[step] = temporal_loss
+        epoch_path_reg[step] = path_reg
         epoch_ts_acc[step] = avg_ts_acc
         epoch_avg_stable_acc[step] = avg_stable_acc
         epoch_stable_t[step] = stable_t
         epoch_num_obs[step] = num_obs
         epoch_stable_acc[step] = stable_acc
         epoch_data_time[step] = data_time
+        epoch_macro_stable_acc[step] = macro_stable_acc
+        epoch_macro_f1[step] = macro_f1
+        epoch_macro_stable_f1[step] = macro_stable_f1
+        epoch_tp += tp
+        epoch_fn += fn
+        epoch_fp += fp
+        epoch_stable_frac_sum += stable_frac_sum
+        epoch_label_count += label_count
 
         step_t1 = time()
         step_time = step_t1 - step_t0
@@ -703,38 +853,104 @@ def inner_loop(
             )
             print(log_string)
     
-    epoch_loss = np.mean(epoch_loss)
+    epoch_total_loss = np.mean(epoch_total_loss)
+    epoch_temporal_loss = np.mean(epoch_temporal_loss)
+    epoch_path_reg = np.mean(epoch_path_reg)
     epoch_ts_acc = np.mean(epoch_ts_acc)
     epoch_avg_stable_acc = np.mean(epoch_avg_stable_acc)
     epoch_stable_acc = np.mean(epoch_stable_acc)
-    epoch_stable_t = np.median(epoch_stable_t)
-    epoch_num_obs = np.median(epoch_num_obs)
+    epoch_stable_t = np.mean(epoch_stable_t)
+    epoch_num_obs = np.mean(epoch_num_obs)
+    epoch_avg_macro_stable_acc = np.nanmean(epoch_macro_stable_acc)
+    epoch_avg_macro_f1 = np.nanmean(epoch_macro_f1)
+    epoch_avg_macro_stable_f1 = np.nanmean(macro_stable_f1)
+
+    epoch_precision = epoch_tp / (epoch_tp + epoch_fp)
+    epoch_recall = epoch_tp / (epoch_tp + epoch_fn)
+    epoch_stable_frac = epoch_stable_frac_sum / epoch_label_count
+    epoch_stable_frac = np.where(
+        np.isfinite(epoch_stable_frac),
+        epoch_stable_frac,
+        0
+    )
+    epoch_f1 = 2 * epoch_precision * epoch_recall / (epoch_precision + epoch_recall)
+    epoch_stable_f1 = 3 * epoch_precision * epoch_recall * epoch_stable_frac / (
+        epoch_precision * epoch_recall + epoch_precision * epoch_stable_frac +
+        epoch_recall * epoch_stable_frac
+    )
+    epoch_f1 = np.where(
+        np.isfinite(epoch_f1),
+        epoch_f1,
+        0
+    )
+    epoch_stable_f1 = np.where(
+        np.isfinite(epoch_stable_f1),
+        epoch_stable_f1,
+        0
+    )
+    epoch_macro_stable_frac = np.mean(epoch_stable_frac)
+    epoch_macro_f1 = np.mean(epoch_f1)
+    epoch_macro_stable_f1 = np.mean(epoch_stable_f1)
+
     epoch_data_time = np.mean(epoch_data_time)
     epoch_step_time = np.mean(epoch_step_time)
     
     metrics = [
-        epoch_loss,
+        epoch_total_loss,
+        epoch_temporal_loss,
+        epoch_path_reg,
         epoch_ts_acc,
         epoch_avg_stable_acc,
         epoch_stable_acc,
         epoch_stable_t,
         epoch_num_obs,
+        epoch_avg_macro_stable_acc,
+        epoch_avg_macro_f1,
+        epoch_avg_macro_stable_f1,
+        epoch_macro_stable_frac,
+        epoch_macro_f1,
+        epoch_macro_stable_f1,
         epoch_data_time,
         epoch_step_time
     ]
     metrics = np.array(metrics)
 
-    return model, opt_state, dataloader, metrics
+    return model, opt_state, transform_state, dataloader, metrics
 
-def make_epoch_string(name, metrics, epoch_time):
+@eqx.filter_jit
+def get_lr(opt_state, transform_state, lr_schedule):
+
+        
+    lr_schedule_step =optax.tree_utils.tree_get(opt_state, 'ScaleByScheduleState').count
+    scale = optax.tree_utils.tree_get(transform_state, "scale")
+    lr = lr_schedule(lr_schedule_step) * scale
+
+    return lr
+
+def make_epoch_string(
+    name, metrics, epoch_time,
+    init_lr, final_lr,
+    print_times=False,
+    use_path_reg=False,
+    lr_scale=1.0
+    
+):
 
     (
-        loss,
+        total_loss,
+        temporal_loss,
+        path_reg,
         ts_acc,
         avg_stable_acc,
         stable_acc,
         stable_t,
         num_obs,
+        avg_macro_stable_acc,
+        avg_macro_f1,
+        avg_macro_stable_f1,
+        macro_stable_acc,
+        macro_f1,
+        macro_stable_f1,
         data_time,
         step_time
     ) = metrics
@@ -744,14 +960,50 @@ def make_epoch_string(name, metrics, epoch_time):
         prefix = prefix + "  "
     epoch_string = (
         prefix +
-        f"Loss: {loss:.2e} | " +
+        f"Total Loss: {total_loss:.2e} | "
+    )
+    if use_path_reg:
+        epoch_string = (
+            epoch_string +
+            f"Temp. Loss: {temporal_loss:.2e} | " +
+            f"Path Reg.: {path_reg:.2e} | "
+        )
+
+    epoch_string = (
+        epoch_string +
         f"Avg. TS Acc: {ts_acc*100:.2f}% | " +
         f"Avg. Stable Acc: {avg_stable_acc*100:.2f}% | " +
         f"Stable Acc: {stable_acc*100:.2f}% | " +
         f"Stable T0: {stable_t:.2f} | " +
-        f"Num. Obs.: {num_obs:.2f} | " +
-        f"Data Time: {data_time / 60:.0e} min | " +
-        f"Step Time: {step_time / 60:.0e} min | " +
+        f"Num. Obs.: {num_obs:.2f} | "
+    )
+
+    if name == "Val":
+        epoch_string = (
+            epoch_string +
+            f"Macro Stable Acc: {macro_stable_acc*100:.2f}% | " +
+            f"Macro F1: {macro_f1*100:.2f}% | " + 
+            f"Macro S1: {macro_stable_f1*100:.2f}%"
+        )
+    else:
+        epoch_string = (
+            epoch_string +
+            f"Macro Stable Acc: {avg_macro_stable_acc*100:.2f}% | " +
+            f"Macro F1: {avg_macro_f1*100:.2f}% | " + 
+            f"Macro S1: {avg_macro_stable_f1*100:.2f}%"
+        )
+
+    if print_times:
+        epoch_string = (
+            epoch_string +
+            f" | Data Time: {data_time / 60:.0e} min | " +
+            f"Step Time: {step_time / 60:.0e} min"
+        )
+    
+    epoch_string = (
+        epoch_string +
+        f" | lr: {init_lr:.2e} - {final_lr:.2e} | " +
+        f"Scale: {lr_scale:.2e} | " +
         f"Epoch Time: {epoch_time / 60:.2f} min"
     )
 
@@ -762,10 +1014,10 @@ gru_key, ncde_key, key = jr.split(key, 3)
 
 model_config = {
     "input_size": 31,
-    "hidden_size": 100,
+    "hidden_size": 256,
     "num_classes": num_classes,
     "num_gru_layers": 2,
-    "classifier_width": 100,
+    "classifier_width": 256,
     "classifier_depth": 0,
     "online": True,
     "use_dropout": True,
@@ -782,20 +1034,35 @@ gru = GRUClassifier(
     **model_config
 )
 
-utils.save_hyperparams("hyperparams.eqx", model_config)
+model = gru
+epochs = 1000
+warmup_epochs = 50
+total_epochs = epochs + warmup_epochs
+
+early_stopping_patience = 50
+use_s1_for_patience = True
+
+reduce_lr_patience = 10
+reduce_lr_cooldown = 0
+reduce_lr_factor = 0.5
+reduce_lr_rtol = 1e-4
+reduce_lr_accum_size = 1
+
+verbose = False
+use_class_weights = True
+use_path_reg = True
+path_reg_lambda = 0.1
+temporal_loss_fn = temporal_focal_cross_entropy_loss
+
+run_name = "GRU_Path_Reg"
+save_path = Path("/mimer/NOBACKUP/groups/naiss2025-22-731/jolteon_challenge/Results"+run_name)
+save_path.mkdir(parents=True, exist_ok=True)
+
+utils.save_hyperparams(save_path / "hyperparams.eqx", model_config)
 
 gru_num_params = count_params(gru)
 
 print(gru_num_params)
-
-model = gru
-epochs = 1000
-patience = 100
-warmup_epochs = 50
-total_epochs = epochs + warmup_epochs
-verbose = False
-use_class_weights = True
-temporal_loss_fn = temporal_focal_cross_entropy_loss
 
 train_steps_per_epoch = len(train_dataloader)
 val_steps_per_epoch = len(val_dataloader)
@@ -817,11 +1084,28 @@ learning_rate_schedule = optax.schedules.warmup_cosine_decay_schedule(
 optimizer = optax.adamw(learning_rate=learning_rate_schedule)
 opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
 
+lr_transform = optax.contrib.reduce_on_plateau(
+    patience=reduce_lr_patience,
+    cooldown=reduce_lr_cooldown,
+    factor=reduce_lr_factor,
+    rtol=reduce_lr_rtol,
+    accumulation_size=reduce_lr_accum_size
+)
+transform_state = lr_transform.init(eqx.filter(model, eqx.is_array))
+
 if use_class_weights:
-    loss_fn = make_loss_fn(jnp.asarray(class_weights), temporal_loss_fn)
+    loss_fn = make_loss_fn(
+        weights=jnp.asarray(class_weights),
+        temporal_loss_fn=temporal_loss_fn, num_classes=num_classes,
+        use_path_reg=use_path_reg, path_reg_lambda=path_reg_lambda
+    )
 else:
     _class_weights = jnp.ones_like(class_weights)
-    loss_fn = make_loss_fn(_class_weights, temporal_loss_fn)
+    loss_fn = make_loss_fn(
+        weights=_class_weights,
+        temporal_loss_fn=temporal_loss_fn, num_classes=num_classes,
+        use_path_reg=use_path_reg, path_reg_lambda=path_reg_lambda
+    )
 
 val_loss_fn = loss_fn
 make_train_step = train_step_factory(optimizer, loss_fn)
@@ -830,13 +1114,14 @@ make_val_step = val_step_factory(val_loss_fn)
 train_loader = infinite_loader(train_dataloader)
 val_loader = infinite_loader(val_dataloader)
 
-num_metrics = 8
+num_metrics = 16
 train_metrics = np.zeros((epochs, num_metrics))
 val_metrics = np.zeros_like(train_metrics)
 
 patience_counter = 0
 best_epoch = 0
 best_loss = np.inf
+best_s1 = 0
 
 for epoch in range(epochs):
 
@@ -844,15 +1129,24 @@ for epoch in range(epochs):
     train_t0 = time()
     if verbose:
         print("\nTraining\n")
-    model, opt_state, train_loader, epoch_train_metrics = inner_loop(
+
+    lr_scale = optax.tree_utils.tree_get(transform_state, "scale")
+    lr_scale = np.asarray(lr_scale)
+    init_lr = get_lr(opt_state, transform_state, learning_rate_schedule)
+    init_lr = np.asarray(init_lr)
+    model, opt_state, transform_state, train_loader, epoch_train_metrics = inner_loop(
         model=model,
         opt_state=opt_state,
+        transform_state=transform_state,
         dataloader=train_loader,
         step_fn=make_train_step,
         num_steps=train_steps_per_epoch,
         verbose=verbose,
+        num_classes=num_classes,
         key=train_key,
     )
+    final_lr = get_lr(opt_state, transform_state, learning_rate_schedule)
+    final_lr = np.asarray(final_lr)
     train_metrics[epoch] = epoch_train_metrics
     train_time = time() - train_t0
     
@@ -861,50 +1155,80 @@ for epoch in range(epochs):
         print("\nValidation\n")
 
     model = eqx.nn.inference_mode(model, value=True)
-    model, opt_state, val_loader, epoch_val_metrics = inner_loop(
+    model, opt_state, transform_state, val_loader, epoch_val_metrics = inner_loop(
         model=model,
         opt_state=opt_state,
+        transform_state=transform_state,
         dataloader=val_loader,
         step_fn=make_val_step,
         num_steps=val_steps_per_epoch,
         verbose=verbose,
+        num_classes=num_classes,
         key=val_key
     )
     model = eqx.nn.inference_mode(model, value=False)
     val_metrics[epoch] = epoch_val_metrics
+    epoch_val_loss = epoch_val_metrics[0]
+    epoch_val_s1 = epoch_val_metrics[-3]
+
+
+    if use_s1_for_patience:
+        lr_stat = epoch_val_s1
+    else:
+        lr_stat = epoch_val_loss
+    _, transform_state = lr_transform.update(
+        updates=eqx.filter(model, eqx.is_array), state=transform_state, value=lr_stat
+    )
+
     if verbose:
         print("\n")
     val_time = time() - val_t0
 
-    epoch_val_loss = epoch_val_metrics[0]
-    if epoch_val_loss < best_loss:
+    
+    new_best_loss = (
+        (epoch_val_loss < best_loss) & ~use_s1_for_patience
+    )
+    new_best_s1 = (
+        (epoch_val_s1 > best_s1) & use_s1_for_patience
+    )
+    new_best = new_best_loss | new_best_s1
+
+    if new_best:
         best_loss = epoch_val_loss
+        best_s1 = epoch_val_s1
         best_epoch = epoch
         patience_counter = 0
-        utils.save_model("best_model_weights.eqx", model)
-        np.save("train_metrics.npy", train_metrics)
-        np.save("val_metrics.npy", val_metrics)
+        utils.save_model(save_path / "best_model_weights.eqx", model)
+        np.save(save_path / "train_metrics.npy", train_metrics)
+        np.save(save_path / "val_metrics.npy", val_metrics)
 
-    train_string = make_epoch_string("Train", epoch_train_metrics, train_time)
-    val_string = make_epoch_string("Val", epoch_val_metrics, val_time)
+    train_string = make_epoch_string("Train", epoch_train_metrics, train_time, use_path_reg=use_path_reg, init_lr=init_lr, final_lr=final_lr, lr_scale=lr_scale)
+    val_string = make_epoch_string("Val", epoch_val_metrics, val_time, use_path_reg=use_path_reg, init_lr=final_lr, final_lr=final_lr, lr_scale=lr_scale)
 
     print(f"\n--------------- EPOCH {epoch+1} ---------------")
     print(train_string)
     print(val_string)
 
     patience_counter += 1
-    if patience_counter >= patience:
+    if patience_counter >= early_stopping_patience:
         best_train_metrics = train_metrics[best_epoch]
         best_val_metrics = val_metrics[best_epoch]
 
-        train_string = make_epoch_string("Train", best_train_metrics, train_time)
-        val_string = make_epoch_string("Val", best_val_metrics, val_time)        
+        train_string = make_epoch_string("Train", best_train_metrics, train_time, use_path_reg=use_path_reg)
+        val_string = make_epoch_string("Val", best_val_metrics, val_time, use_path_reg=use_path_reg)        
+
+        if use_s1_for_patience:
+            basis = "S1"
+        else:
+            basis = "Val Loss"
 
         print(f"\n-----------------------------------------------")
         print(f"{patience_counter} epochs since last improvement, stopping training.")
-        print(f"Best Epoch: {best_epoch}")
+        print(f"Best Epoch based on {basis}: {best_epoch}")
         print(train_string)
         print(val_string)
+        break
     
-
-utils.save_model("last_model_weights.eqx", model)
+np.save(save_path / "train_metrics.npy", train_metrics)
+np.save(save_path / "val_metrics.npy", val_metrics)
+utils.save_model(save_path / "last_model_weights.eqx", model)
