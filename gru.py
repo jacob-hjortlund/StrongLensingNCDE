@@ -1049,6 +1049,7 @@ reduce_lr_rtol = 1e-4
 reduce_lr_accum_size = 1
 
 verbose = False
+print_times = True
 use_class_weights = True
 use_path_reg = True
 path_reg_lambda = 0.1
@@ -1202,8 +1203,18 @@ for epoch in range(epochs):
         np.save(save_path / "train_metrics.npy", train_metrics)
         np.save(save_path / "val_metrics.npy", val_metrics)
 
-    train_string = make_epoch_string("Train", epoch_train_metrics, train_time, use_path_reg=use_path_reg, init_lr=init_lr, final_lr=final_lr, lr_scale=lr_scale)
-    val_string = make_epoch_string("Val", epoch_val_metrics, val_time, use_path_reg=use_path_reg, init_lr=final_lr, final_lr=final_lr, lr_scale=lr_scale)
+    train_string = make_epoch_string(
+        name="Train", metrics=epoch_train_metrics,
+        epoch_time=train_time, print_times=print_times,
+        use_path_reg=use_path_reg, init_lr=init_lr,
+        final_lr=final_lr, lr_scale=lr_scale
+    )
+    val_string = make_epoch_string(
+        name="Val", metrics=epoch_val_metrics,
+        epoch_time=train_time, print_times=print_times,
+        use_path_reg=use_path_reg, init_lr=final_lr,
+        final_lr=final_lr, lr_scale=lr_scale
+    )
 
     print(f"\n--------------- EPOCH {epoch+1} ---------------")
     print(train_string)
