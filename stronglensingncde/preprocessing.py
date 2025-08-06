@@ -1,16 +1,16 @@
 import warnings
 import numpy as np
 import pandas as pd
+import astropy.units as u
 import astropy.table as at
 
 from tqdm import tqdm
 from pathlib import Path
 from astropy.io import fits
 from functools import reduce
-from sklearn.model_selection import train_test_split
 from collections import defaultdict
-
-
+from sklearn.model_selection import train_test_split
+from astropy.coordinates import SkyCoord, SkyOffsetFrame
 
 label_mappings = {
     "Ia": ["SNIa-SALT3"],
@@ -115,6 +115,35 @@ def add_detection_flags(heads: pd.DataFrame, phots: list[pd.DataFrame], snr_limi
         
         _heads.loc[i, 'DETECTED'] = n_detections > 0
     
+    return _heads
+
+def rescale_lensed_coords(heads: pd.DataFrame, scale=1/3600) -> pd.DataFrame:
+
+    _heads = heads.copy()
+    mask = _heads['NUM_LCS'] > 1
+
+    for snid, group in _heads.loc[mask].groupby('SNID'):
+        idx = group.index
+        ras = group['RA'].values * u.deg
+        decs = group['DEC'].values * u.deg
+
+        # original coords
+        coords = SkyCoord(ras, decs)
+
+        # pick the first image as tangent point
+        ref = coords[0]
+        frame = SkyOffsetFrame(origin=ref)
+
+        # offsets in ARC seconds
+        offsets = coords.transform_to(frame)
+        scaled = SkyCoord(lon=offsets.lon * scale,
+                        lat=offsets.lat * scale,
+                        frame=frame)
+
+        new_coords = scaled.transform_to('icrs')
+        _heads.loc[idx, 'RA']  = new_coords.ra.deg
+        _heads.loc[idx, 'DEC'] = new_coords.dec.deg
+
     return _heads
 
 def split_snids(
@@ -404,7 +433,6 @@ def join_multiclass_labels(
     labels = np.concatenate([labels, ['None'] * n_remaining])
 
     return labels
-
 
 def transform_image_timeseries(
     image_timeseries: pd.DataFrame,
