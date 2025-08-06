@@ -92,31 +92,49 @@ def add_num_transient_lcs(heads: pd.DataFrame) -> pd.DataFrame:
 
     return _heads
 
-def add_detection_flags(heads: pd.DataFrame, phots: list[pd.DataFrame], snr_limit: float = 5., show_progress_bar=True) -> pd.DataFrame:
+def add_detection_flags(heads, phots, snr_limit=5.0, show_progress_bar=True):
+    # 1 copy of heads and phots
+    out_heads = heads.copy()
+    out_heads['DETECTED'] = False
 
-    _heads = heads.copy()
-    disable_progress_bar = not show_progress_bar
+    out_phots = []
+    for p in phots:
+        cp = p.copy()
+        cp['DETECTION'] = 0.0
+        cp['SNR']       = np.nan
+        out_phots.append(cp)
 
-    _heads['DETECTED'] = False
+    # group heads by which phot they refer to
+    grouped = out_heads.groupby('FILE_INDEX', sort=False)
 
-    for i in tqdm(range(len(heads)), disable=disable_progress_bar):
+    for file_idx, head_block in tqdm(grouped, disable=not show_progress_bar):
+        phot = out_phots[file_idx]
+        # pull out the .values once for speed
+        flux_arr   = phot['FLUXCAL'].values
+        ferr_arr   = phot['FLUXCALERR'].values
+        snr_arr    = phot['SNR'].values
+        det_arr    = phot['DETECTION'].values
 
-        file_index = heads['FILE_INDEX'].iloc[i]
-        ptr_min = heads['PTROBS_MIN'].iloc[i]-1
-        ptr_max = heads['PTROBS_MAX'].iloc[i]
+        # for each head in that phot, update the arrays
+        for i, head in head_block.iterrows():
+            i0 = head['PTROBS_MIN'] - 1
+            i1 = head['PTROBS_MAX']
+            rng = np.arange(i0, i1)
 
-        _phot = phots[file_index]
-        indeces = _phot.index[ptr_min:ptr_max]
+            # compute
+            slice_snr = np.abs(flux_arr[rng] / ferr_arr[rng])
+            snr_arr[rng] = slice_snr
 
-        flux = _phot.loc[indeces, 'FLUXCAL']
-        flux_err = _phot.loc[indeces, 'FLUXCALERR']
-        snr = flux / flux_err
-        idx_detection = snr >= snr_limit
-        n_detections = idx_detection.sum()
-        
-        _heads.loc[i, 'DETECTED'] = n_detections > 0
-    
-    return _heads
+            mask = slice_snr >= snr_limit
+            det_arr[rng[mask]] = 1.0
+
+            # mark head as detected if any True in mask
+            out_heads.at[i, 'DETECTED'] = bool(mask.any())
+
+        # arrays mutated in-place, so just reassign
+        out_phots[file_idx] = phot
+
+    return out_heads, out_phots
 
 def rescale_lensed_coords(heads: pd.DataFrame, scale=1/3600) -> pd.DataFrame:
 
@@ -146,6 +164,78 @@ def rescale_lensed_coords(heads: pd.DataFrame, scale=1/3600) -> pd.DataFrame:
         _heads.loc[idx, 'DEC'] = new_coords.dec.deg
 
     return _heads
+
+def sample_light_curve_coords(
+    head: pd.Series, phots: pd.DataFrame,
+    astrometric_error_floor: float = 0.05,
+    pixel_to_arcsec: float = 0.2
+) -> pd.DataFrame:
+
+    ra0, dec0 = head['RA'], head['DEC']
+    i0, i1 = head['PTROBS_MIN']-1, head['PTROBS_MAX']
+    block = phots.iloc[i0:i1]
+    detected = block['DETECTION'].values == 1.0
+    if not detected.any():
+        return phots
+
+    # get integer positions within the slice
+    slice_pos = np.nonzero(detected)[0]
+    abs_pos   = slice_pos + i0
+
+    psf  = block['PSF'].values[detected] * pixel_to_arcsec
+    fwhm = 2*np.sqrt(2*np.log(2)) * psf
+    snr  = block['SNR'].values[detected]
+    err  = np.sqrt((fwhm/snr)**2 + astrometric_error_floor**2)
+    err_deg = err / 3600.0
+
+    d_ra, d_dec = np.random.normal(0, err_deg, size=(2,len(err_deg)))
+    d_ra /= np.cos(np.deg2rad(dec0))
+
+    # pull out the underlying arrays
+    ra_arr, dec_arr, err_arr = (
+        phots['RA'].values,
+        phots['DEC'].values,
+        phots['POS_ERR'].values,
+    )
+
+    # vectorized assignment
+    err_arr[abs_pos]   = err
+    ra_arr[abs_pos]    = ra0  + d_ra
+    dec_arr[abs_pos]   = dec0 + d_dec
+
+    # Fill Forced Photometry Before First Detection
+    if abs_pos[-1] < i1:
+        first_err = err[-1]
+        first_ra = ra0 + d_ra[-1]
+        first_dec = dec0 + d_dec[-1]
+        forced_pos = np.arange(abs_pos[-1]+1, i1)
+
+        err_arr[forced_pos] = first_err
+        ra_arr[forced_pos] = first_ra
+        dec_arr[forced_pos] = first_dec
+
+    # pandas will see the mutated arrays
+    return phots
+
+def add_coords_to_timeseries(heads, phots_list):
+    # make one copy of each phot, set up the three new columns
+    phots_list = [p.copy() for p in phots_list]
+    for p in phots_list:
+        p['RA']      = np.nan
+        p['DEC']     = np.nan
+        p['POS_ERR'] = np.nan
+
+    # group heads by which phot they belong to
+    for (file_idx, heads_grp) in tqdm(heads.groupby('FILE_INDEX')):
+        phot = phots_list[file_idx]  # one copy per file, not per head
+        
+        # process all head-segments for this file in one go
+        for _, head in heads_grp.iterrows():
+            phot = sample_light_curve_coords(head, phot)
+
+        phots_list[file_idx] = phot
+
+    return phots_list
 
 def add_match_labels(heads: pd.DataFrame, max_sep: float = 10) -> pd.DataFrame:
     """
@@ -261,7 +351,6 @@ def get_light_curve(
 
 def process_light_curve(
     phot: pd.DataFrame,
-    detection_limit: float = 5.,
     delta_trigger_max: float = np.inf,
     delta_trigger_min: float = -30.,
     bands: list[str] = ['u','g', 'r', 'i', 'z', 'Y'],
@@ -272,10 +361,7 @@ def process_light_curve(
 ) -> pd.DataFrame:
 
     mjd = phot['MJD']
-    snr = phot['FLUXCAL'] / phot['FLUXCALERR']
-    idx_detection = snr >= detection_limit
-    phot['DETECTION'] = 0.
-    phot.loc[idx_detection, 'DETECTION'] = 1.
+    idx_detection = phot['DETECTION'] == 1.
     
     idx_trigger = np.where(phot['DETECTION'])[0][0]
     t_trigger = mjd[idx_trigger]
