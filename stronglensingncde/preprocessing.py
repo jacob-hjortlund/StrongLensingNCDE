@@ -1,3 +1,4 @@
+import h5py
 import warnings
 import numpy as np
 import pandas as pd
@@ -145,6 +146,79 @@ def rescale_lensed_coords(heads: pd.DataFrame, scale=1/3600) -> pd.DataFrame:
         _heads.loc[idx, 'DEC'] = new_coords.dec.deg
 
     return _heads
+
+def add_match_labels(heads: pd.DataFrame, max_sep: float = 10) -> pd.DataFrame:
+    """
+    For each row in `heads`, find any other row within `max_sep` on the sky.
+    Record the neighbor’s SNID in MATCH_SNID; then for all “unlensed” rows
+    whose MATCH_SNID occurs >1×, combine their MULTICLASS_LABELs into
+    MATCH_LABELS (with special recodings at the end).
+    
+    Parameters
+    ----------
+    heads : pandas.DataFrame
+        Must contain columns ['RA','DEC','SNID','BINARY_LABEL','MULTICLASS_LABEL'].
+    max_sep : astropy.units.Quantity (angle), optional
+        Maximum sky separation to consider a “match” (default 10″).
+    
+    Returns
+    -------
+    out : pandas.DataFrame
+        A copy of `heads` with two new columns:
+        - MATCH_SNID : SNID of the closest neighbor (≤max_sep), or own SNID.
+        - MATCH_LABELS : combined labels among matching groups.
+    """
+    df = heads.copy()
+    
+    if isinstance(max_sep, u.Quantity):
+        if max_sep.unit != u.arcsec:
+            max_sep = max_sep.to(u.arcsec)
+    else:
+        max_sep = max_sep * u.arcsec
+
+    # 1) set up coords
+    ras  = df['RA'].values  * u.deg
+    decs = df['DEC'].values * u.deg
+    coords = SkyCoord(ras, decs)
+    
+    # 2) find all pairs within max_sep
+    idxc, idxcat, d2d, _ = coords.search_around_sky(coords, max_sep.to(u.deg))
+    
+    # 3) remove self-matches and duplicate orderings
+    mask_nonself = idxc != idxcat
+    i1 = idxc[mask_nonself]
+    i2 = idxcat[mask_nonself]
+    keep = i1 < i2
+    i1u = i1[keep]
+    i2u = i2[keep]
+    
+    # 4) build MATCH_SNID: default to own SNID, then overwrite with neighbor’s
+    snids = df['SNID'].values.copy()
+    snids[i1u] = df['SNID'].values[i2u]
+    df['MATCH_SNID'] = snids
+    
+    # 5) focus on “unlensed”, find which MATCH_SNID occurs >1×
+    is_unlensed = df['BINARY_LABEL'] == 'unlensed'
+    counts = df.loc[is_unlensed, 'MATCH_SNID'].value_counts()
+    multi = counts[counts > 1].index
+    
+    # 6) build MATCH_LABELS by default = own MULTICLASS_LABEL
+    labels = df['MULTICLASS_LABEL'].values.copy()
+    
+    # 7) for each SNID with multiple hits, combine & sort their multiclass labels
+    for sn in multi:
+        mask = (df['MATCH_SNID'] == sn)
+        combo = "_".join(sorted(df.loc[mask, 'MULTICLASS_LABEL'].values))
+        labels[mask] = combo
+    
+    # 8) apply the two special recodings
+    mask_slsn = np.char.find(labels.astype(str), '_SLSN') >= 0
+    labels[mask_slsn] = 'sibling_SLSN'
+    mask_ia   = np.char.find(labels.astype(str), 'Ia_Iax') >= 0
+    labels[mask_ia]   = 'Ia_Ia'
+    
+    df['MATCH_LABELS'] = labels
+    return df
 
 def split_snids(
         heads: pd.DataFrame,
@@ -466,3 +540,134 @@ def transform_image_timeseries(
 
 
     return image_timeseries, trigger_index, transformed_flux, transformed_flux_errs
+
+def serialize_lightcurves(
+    heads,
+    phots_list,
+    out_path,
+    dataset_name,
+    max_images,
+    flux_transform,
+    flux_err_transform,
+    ):
+    """
+    Serialize a set of light-curve image time-series into an HDF5 file.
+
+    Parameters
+    ----------
+    heads : pandas.DataFrame
+        Must contain columns:
+          ['MATCH_SNID', 'BINARY_LABEL', 'NUM_LCS', 'NUM_IMAGES',
+           'PTROBS_MIN', 'PTROBS_MAX', 'MULTICLASS_LABEL']
+        and any others used by prep.join_* and prep.transform_*.
+        Should already be filtered to either train or val.
+    phots_list : list of pandas.DataFrame
+        The photometry tables you originally passed around.
+    out_path : pathlib.Path or str
+        Directory where `{dataset_name}.h5` will be created.
+    dataset_name : str
+        e.g. "train" or "val"; used to name the file.
+    max_images : int
+        How many image‐frames per SN to pad/trim to.
+    flux_transform, flux_err_transform : callables
+        Functions applied in `prep.transform_image_timeseries`.
+
+    Returns
+    -------
+    None
+    """
+
+    out_path = Path(out_path)
+    h5file_path = out_path / f"{dataset_name}.h5"
+    
+    # open (or overwrite) the file
+    with h5py.File(h5file_path, "w") as h5file:
+        
+        # loop over each unique SNID in this subset
+        for snid in tqdm(heads["MATCH_SNID"].unique(), desc=f"Writing {dataset_name}"):
+            
+            # select all rows matching this SNID
+            sel = (heads["MATCH_SNID"] == snid)
+            sub = heads.loc[sel]
+            
+            # pull per-SN metadata
+            binary_label  = sub["BINARY_LABEL"].iat[0]
+            num_lcs       = len(sub)
+            num_imgs      = sub["NUM_IMAGES"].iat[0]
+            joint_labels  = join_multiclass_labels(
+                snid_heads=sub, max_images=max_images
+            )
+            
+            # stitch & transform the photometry
+            sn_phots = join_transient_images(
+                snid_heads=sub,
+                phots=phots_list,
+                max_images=max_images
+            )
+            (
+                transformed,
+                trigger_index,
+                flux_arr,
+                flux_err_arr
+            ) = transform_image_timeseries(
+                    image_timeseries=sn_phots,
+                    flux_transform=flux_transform,
+                    fluxerr_transform=flux_err_transform
+                )
+            trigger_time = transformed["MJD"].iat[trigger_index]
+            
+            # pick columns
+            cols = ["MJD", "TRANS_MJD"] + [
+                c for c in transformed.columns
+                if any(pref in c for pref in ("FLUX_", "FLUXERR_", "DET_", "OBS_", "TRANS_Z"))
+            ]
+            tdf = transformed[cols]
+            
+            # infer variable groups by stripping trailing "_{i}"
+            var_bases = []
+            for c in cols[2:]:
+                base = "_".join(c.split("_")[:-1])
+                if base not in var_bases:
+                    var_bases.append(base)
+                    
+            # split into flux / fluxerr / detobs / redshift
+            flds = {
+                "flux":      var_bases[:6],
+                "flux_err":  var_bases[6:12],
+                "detobs":    var_bases[12:24],
+                "redshift":  var_bases[24:],
+            }
+            
+            # stack into 3D arrays [image, epoch, filter]
+            cubes = {}
+            for key, names in flds.items():
+                arrs = []
+                for i in range(1, max_images+1):
+                    cols_i = [f"{nm}_{i}" for nm in names]
+                    arrs.append(tdf[cols_i].to_numpy())
+                cubes[key] = np.stack(arrs, axis=0)
+            
+            # create HDF5 group and datasets
+            grp = h5file.create_group(str(snid))
+            # attributes
+            grp.attrs.update({
+                "MULTICLASS_LABEL": joint_labels.astype("S"),
+                "BINARY_LABEL":     np.asarray(binary_label, dtype="S"),
+                "NUM_LCS":          num_lcs,
+                "NUM_IMAGES":       num_imgs,
+                "TRIGGER_INDEX":    trigger_index,
+                "TRIGGER_TIME":     trigger_time,
+            })
+
+            # time axes
+            grp.create_dataset("MJD",       data=tdf["MJD"].values).attrs["column_names"] = np.array(["MJD"], dtype="S")
+            grp.create_dataset("TRANS_MJD", data=tdf["TRANS_MJD"].values).attrs["column_names"] = np.array(["MJD-MJD[0] / 1000"], dtype="S")
+            
+            # data cubes
+            for key in ("flux", "flux_err", "detobs", "redshift"):
+                dset = grp.create_dataset(
+                    key.upper() if key!="flux_err" else "FLUX_ERR",
+                    data=cubes[key]
+                )
+                dset.attrs["column_names"] = np.array(flds[key], dtype="S")
+    print(f"✅ Wrote {h5file_path}")
