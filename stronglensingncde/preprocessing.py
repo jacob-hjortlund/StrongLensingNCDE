@@ -529,19 +529,24 @@ def join_transient_images(
         'PHOTOZ', 'PHOTOZ_ERR',
         'TRANS_SPECZ', 'TRANS_SPECZ_ERR',
         'TRANS_PHOTOZ', 'TRANS_PHOTOZ_ERR'
-    ]
+    ],
+    stack_nightly=True,
 ):
     
+    if stack_nightly:
+        stack_fn = lambda phot: stack_observations(
+            phot, relative_error_floor=0.01,
+            added_columns=added_columns,
+        )
+    else:
+        stack_fn = lambda phot: phot
+
     snid_phots = []
     for i, (_, img_head) in enumerate(snid_heads.iterrows()):
         
         img_phot = get_light_curve(img_head, phots, columns_to_add=added_columns)
         img_phot = process_light_curve(img_phot, added_columns=added_columns)
-        img_phot = stack_observations(
-            img_phot,
-            relative_error_floor=0.01,
-            added_columns=added_columns
-        )
+        img_phot = stack_fn(img_phot)
 
         columns = img_phot.columns
         cols_to_rename = columns.delete(0)
@@ -635,6 +640,7 @@ def serialize_lightcurves(
     max_images,
     flux_transform,
     flux_err_transform,
+    stack_nightly = True,
     ):
     """
     Serialize a set of light-curve image time-series into an HDF5 file.
@@ -688,7 +694,8 @@ def serialize_lightcurves(
             sn_phots = join_transient_images(
                 snid_heads=sub,
                 phots=phots_list,
-                max_images=max_images
+                max_images=max_images,
+                stack_nightly=stack_nightly,
             )
             (
                 transformed,
