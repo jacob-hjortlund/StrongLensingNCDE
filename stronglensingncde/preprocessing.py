@@ -418,6 +418,7 @@ def nanweighted_average(x, errs, axis=None):
     w_sum = np.nansum(w, axis=axis)
     mean = np.nansum(x * w, axis=axis) / w_sum
     mean_err = np.sqrt(1/w_sum)
+    mean_err = np.where(np.isfinite(mean_err), mean_err, np.nan)
 
     return mean, mean_err
 
@@ -580,7 +581,7 @@ def stack_observations(
                 night_decs = band_decs[idx]
                 night_errs = band_pos_errs[idx]
 
-                night_vectors = sphere2cart(night_ras, night_decs)
+                night_vectors = sphere2cart(night_ras, night_decs).T
                 night_vector_errs = np.tile(night_errs[:, None], (1, 3))
 
                 night_vector, night_err = nanweighted_average(
