@@ -349,6 +349,24 @@ def get_light_curve(
     
     return phot
 
+def sphere2cart(ra, dec):
+    x = np.cos(ra)*np.cos(dec)
+    y = np.sin(ra)*np.cos(dec)
+    z = np.sin(dec)
+    p = np.array([x,y,z])
+
+    return p
+
+def nanweighted_average(x, errs, axis=None):
+
+    w = 1/errs**2
+
+    w_sum = np.nansum(w, axis=axis)
+    mean = np.nansum(x * w, axis=axis) / w_sum
+    mean_err = np.sqrt(1/w_sum)
+
+    return mean, mean_err
+
 def process_light_curve(
     phot: pd.DataFrame,
     delta_trigger_max: float = np.inf,
@@ -374,6 +392,9 @@ def process_light_curve(
         phot[f'{band}_FLUX'] = np.nan
         phot[f'{band}_FLUXERR'] = np.nan
         phot[f'{band}_DET'] = 0.
+        phot[f'{band}_RA'] = np.nan
+        phot[f'{band}_DEC'] = np.nan
+        phot[f'{band}_POS_ERR'] = np.nan
 
         idx_band = phot['BAND'] == band
         idx_band_and_detection = idx_band & idx_detection
@@ -381,10 +402,36 @@ def process_light_curve(
         phot.loc[idx_band, f'{band}_FLUX'] = phot.loc[idx_band, 'FLUXCAL']
         phot.loc[idx_band, f'{band}_FLUXERR'] = phot.loc[idx_band, 'FLUXCALERR']
         phot.loc[idx_band_and_detection, f'{band}_DET'] = 1.
+        phot.loc[idx_band_and_detection, f'{band}_RA'] = phot.loc[idx_band, 'RA']
+        phot.loc[idx_band_and_detection, f'{band}_DEC'] = phot.loc[idx_band, 'DEC']
+        phot.loc[idx_band_and_detection, f'{band}_POS_ERR'] = phot.loc[idx_band, 'POS_ERR']
         phot[f'{band}_OBS'] = np.cumsum(~np.isnan(phot[f'{band}_FLUX']))
+    
     
     idx_all_nan = np.all(np.isnan(phot[[f'{band}_FLUX' for band in bands]]), axis=1)
     phot.loc[idx_all_nan, added_columns] = np.nan
+
+    ra_cols = phot.columns[phot.columns.str.contains('_RA')]
+    dec_cols = phot.columns[phot.columns.str.contains('_DEC')]
+    err_cols = phot.columns[phot.columns.str.contains('_POS_ERR')]
+
+    ras = phot.loc[:, ra_cols].to_numpy()
+    decs = phot.loc[:, dec_cols].to_numpy()
+    errs = phot.loc[:, err_cols].to_numpy()
+    errs = errs[:, :, None]
+    errs = np.tile(errs, (1, 1, 3))
+
+    phot = phot.drop(columns=ra_cols)
+    phot = phot.drop(columns=dec_cols)
+    phot = phot.drop(columns=err_cols)
+
+    coords = sphere2cart(ras, decs)
+    coords = np.swapaxes(coords, 1, 0)
+    coords = np.swapaxes(coords, 1, 2)
+
+    avg_coords, avg_err = nanweighted_average(coords, errs, axis=1)
+    phot[['X', 'Y', 'Z']] = avg_coords
+    phot['POS_ERR'] = avg_err[:, 0]
 
     return phot
 
