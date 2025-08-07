@@ -349,24 +349,6 @@ def get_light_curve(
     
     return phot
 
-def sphere2cart(ra, dec):
-    x = np.cos(ra)*np.cos(dec)
-    y = np.sin(ra)*np.cos(dec)
-    z = np.sin(dec)
-    p = np.array([x,y,z])
-
-    return p
-
-def nanweighted_average(x, errs, axis=None):
-
-    w = 1/errs**2
-
-    w_sum = np.nansum(w, axis=axis)
-    mean = np.nansum(x * w, axis=axis) / w_sum
-    mean_err = np.sqrt(1/w_sum)
-
-    return mean, mean_err
-
 def process_light_curve(
     phot: pd.DataFrame,
     delta_trigger_max: float = np.inf,
@@ -411,29 +393,33 @@ def process_light_curve(
     idx_all_nan = np.all(np.isnan(phot[[f'{band}_FLUX' for band in bands]]), axis=1)
     phot.loc[idx_all_nan, added_columns] = np.nan
 
-    ra_cols = phot.columns[phot.columns.str.contains('_RA')]
-    dec_cols = phot.columns[phot.columns.str.contains('_DEC')]
-    err_cols = phot.columns[phot.columns.str.contains('_POS_ERR')]
-
-    ras = phot.loc[:, ra_cols].to_numpy()
-    decs = phot.loc[:, dec_cols].to_numpy()
-    errs = phot.loc[:, err_cols].to_numpy()
-    errs = errs[:, :, None]
-    errs = np.tile(errs, (1, 1, 3))
-
-    phot = phot.drop(columns=ra_cols)
-    phot = phot.drop(columns=dec_cols)
-    phot = phot.drop(columns=err_cols)
-
-    coords = sphere2cart(ras, decs)
-    coords = np.swapaxes(coords, 1, 0)
-    coords = np.swapaxes(coords, 1, 2)
-
-    avg_coords, avg_err = nanweighted_average(coords, errs, axis=1)
-    phot[['X', 'Y', 'Z']] = avg_coords
-    phot['POS_ERR'] = avg_err[:, 0]
-
     return phot
+
+def sphere2cart(ra, dec):
+    x = np.cos(ra)*np.cos(dec)
+    y = np.sin(ra)*np.cos(dec)
+    z = np.sin(dec)
+    p = np.array([x,y,z])
+
+    return p
+
+def cart2sphere(x,y,z):
+
+    r = np.sqrt(x**2 + y**2)
+    dec = np.arctan2(z, r) * u.rad.to(u.deg)
+    ra = np.atan2(y, x) * u.rad.to(u.deg)
+
+    return ra, dec
+
+def nanweighted_average(x, errs, axis=None):
+
+    w = 1/errs**2
+
+    w_sum = np.nansum(w, axis=axis)
+    mean = np.nansum(x * w, axis=axis) / w_sum
+    mean_err = np.sqrt(1/w_sum)
+
+    return mean, mean_err
 
 def group_by_night(t):
     """
@@ -465,6 +451,36 @@ def group_by_night(t):
     
     return dict(nights)
 
+def transform_and_average_centroid(phot):
+
+    warnings.filterwarnings('ignore')
+
+    ra_cols = phot.columns[phot.columns.str.contains('_RA')]
+    dec_cols = phot.columns[phot.columns.str.contains('_DEC')]
+    err_cols = phot.columns[phot.columns.str.contains('_POS_ERR')]
+
+    ras = phot.loc[:, ra_cols].to_numpy()
+    decs = phot.loc[:, dec_cols].to_numpy()
+    errs = phot.loc[:, err_cols].to_numpy()
+    errs = errs[:, :, None]
+    errs = np.tile(errs, (1, 1, 3))
+
+    phot = phot.drop(columns=ra_cols)
+    phot = phot.drop(columns=dec_cols)
+    phot = phot.drop(columns=err_cols)
+
+    coords = sphere2cart(ras, decs)
+    coords = np.swapaxes(coords, 1, 0)
+    coords = np.swapaxes(coords, 1, 2)
+
+    avg_coords, avg_err = nanweighted_average(coords, errs, axis=1)
+    phot[['X', 'Y', 'Z']] = avg_coords
+    phot['POS_ERR'] = avg_err[:, 0]
+
+    warnings.resetwarnings()
+
+    return phot
+
 def stack_observations(
     img_phot, relative_error_floor=0.01,
     bands = ['u', 'g', 'r', 'i', 'z', 'Y'],
@@ -494,6 +510,9 @@ def stack_observations(
         columns[f'{band}_FLUXERR'] = np.full(n_nights, np.nan)
         columns[f'{band}_DET'] = np.zeros(n_nights)
         columns[f'{band}_OBS'] = np.zeros(n_nights)
+        columns[f'{band}_RA'] = np.full(n_nights, np.nan)
+        columns[f'{band}_DEC'] = np.full(n_nights, np.nan)
+        columns[f'{band}_POS_ERR'] = np.full(n_nights, np.nan)
     for added_column in added_columns:
         columns[added_column] = np.full(n_nights, np.nan)
 
@@ -501,6 +520,9 @@ def stack_observations(
     flux_err_cols = [f'{band}_FLUXERR' for band in bands]
     det_cols = [f'{band}_DET' for band in bands]
     obs_cols = [f'{band}_OBS' for band in bands]
+    ra_cols = [f'{band}_RA' for band in bands]
+    dec_cols = [f'{band}_DEC' for band in bands]
+    pos_err_cols = [f'{band}_POS_ERR' for band in bands]
 
     flux = img_phot[flux_cols].values
     flux_err = img_phot[flux_err_cols].values
@@ -508,6 +530,9 @@ def stack_observations(
     obs = img_phot[obs_cols].values
     weights = 1. / flux_err**2
     added_cols = img_phot[added_columns].values
+    ras = img_phot[ra_cols].values * u.deg.to(u.rad)
+    decs = img_phot[dec_cols].values * u.deg.to(u.rad)
+    pos_errs = img_phot[pos_err_cols].values
 
     for i, night in enumerate(nights):
 
@@ -524,11 +549,6 @@ def stack_observations(
             valid_obs = ~np.isnan(band_weights[idx])
             any_valid = np.any(valid_obs)
 
-            avg_flux = np.nan
-            avg_flux_err = np.nan
-            night_det = 0
-            night_obs = 0
-
             if any_valid:
                 normed_weights = band_weights[idx] / np.nansum(band_weights[idx])
                 avg_flux = np.nansum(band_flux[idx] * normed_weights)
@@ -543,11 +563,38 @@ def stack_observations(
 
                 night_det = np.max(band_det[idx])
                 night_obs = np.max(band_obs[idx])
+            
+                columns[f'{band}_FLUX'][i] = avg_flux
+                columns[f'{band}_FLUXERR'][i] = avg_flux_err
+                columns[f'{band}_DET'][i] = night_det
+                columns[f'{band}_OBS'][i] = night_obs
 
-            columns[f'{band}_FLUX'][i] = avg_flux
-            columns[f'{band}_FLUXERR'][i] = avg_flux_err
-            columns[f'{band}_DET'][i] = night_det
-            columns[f'{band}_OBS'][i] = night_obs
+            band_ras = ras[:, j]
+            band_decs = decs[:, j]
+            band_pos_errs = pos_errs[:, j]
+            valid_pos = ~np.isnan(band_ras[idx])
+            any_valid = np.any(valid_pos)
+
+            if any_valid:
+                night_ras = band_ras[idx]
+                night_decs = band_decs[idx]
+                night_errs = band_pos_errs[idx]
+
+                night_vectors = sphere2cart(night_ras, night_decs)
+                night_vector_errs = np.tile(night_errs[:, None], (1, 3))
+
+                night_vector, night_err = nanweighted_average(
+                    x=night_vectors,
+                    errs=night_vector_errs,
+                    axis=0
+                )
+
+                night_ra, night_dec = cart2sphere(*night_vector)
+                night_err = night_err[0]
+
+                columns[f'{band}_RA'][i] = night_ra
+                columns[f'{band}_DEC'][i] = night_dec
+                columns[f'{band}_POS_ERR'][i] = night_err
 
         for j, added_column in enumerate(added_columns):
             columns[added_column][i] = np.nanmean(added_cols[idx, j])
@@ -594,6 +641,7 @@ def join_transient_images(
         img_phot = get_light_curve(img_head, phots, columns_to_add=added_columns)
         img_phot = process_light_curve(img_phot, added_columns=added_columns)
         img_phot = stack_fn(img_phot)
+        img_phot = transform_and_average_centroid(img_phot)
 
         columns = img_phot.columns
         cols_to_rename = columns.delete(0)
