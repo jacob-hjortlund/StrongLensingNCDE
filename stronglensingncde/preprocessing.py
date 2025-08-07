@@ -381,12 +381,12 @@ def process_light_curve(
         idx_band = phot['BAND'] == band
         idx_band_and_detection = idx_band & idx_detection
 
+        phot.loc[idx_band_and_detection, f'{band}_DET'] = 1.
         phot.loc[idx_band, f'{band}_FLUX'] = phot.loc[idx_band, 'FLUXCAL']
         phot.loc[idx_band, f'{band}_FLUXERR'] = phot.loc[idx_band, 'FLUXCALERR']
-        phot.loc[idx_band_and_detection, f'{band}_DET'] = 1.
-        phot.loc[idx_band_and_detection, f'{band}_RA'] = phot.loc[idx_band, 'RA']
-        phot.loc[idx_band_and_detection, f'{band}_DEC'] = phot.loc[idx_band, 'DEC']
-        phot.loc[idx_band_and_detection, f'{band}_POS_ERR'] = phot.loc[idx_band, 'POS_ERR']
+        phot.loc[idx_band, f'{band}_RA'] = phot.loc[idx_band, 'RA']
+        phot.loc[idx_band, f'{band}_DEC'] = phot.loc[idx_band, 'DEC']
+        phot.loc[idx_band, f'{band}_POS_ERR'] = phot.loc[idx_band, 'POS_ERR']
         phot[f'{band}_OBS'] = np.cumsum(~np.isnan(phot[f'{band}_FLUX']))
     
     
@@ -475,7 +475,7 @@ def transform_and_average_centroid(phot):
     coords = np.swapaxes(coords, 1, 2)
 
     avg_coords, avg_err = nanweighted_average(coords, errs, axis=1)
-    phot[['X', 'Y', 'Z']] = avg_coords
+    phot[['XPOS', 'YPOS', 'ZPOS']] = avg_coords
     phot['POS_ERR'] = avg_err[:, 0]
 
     warnings.resetwarnings()
@@ -674,7 +674,7 @@ def join_transient_images(
         empty_phots.append(empty_phot)
     
     merged_snid_phot = pd.concat([merged_snid_phot] + empty_phots, axis=1)
-    regex = "|".join(['MJD', '_FLUX', '_DET', '_OBS'] + added_columns)
+    regex = "|".join(['MJD', '_FLUX', '_DET', '_OBS', 'XPOS', 'YPOS', 'ZPOS', 'POS_ERR'] + added_columns)
     merged_snid_phot = merged_snid_phot.filter(regex=regex)
 
     flux_cols = merged_snid_phot.filter(like='_FLUX')
