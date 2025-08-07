@@ -96,6 +96,7 @@ def add_detection_flags(heads, phots, snr_limit=5.0, show_progress_bar=True):
     # 1 copy of heads and phots
     out_heads = heads.copy()
     out_heads['DETECTED'] = False
+    out_heads['T_TRIGGER'] = np.nan
 
     out_phots = []
     for p in phots:
@@ -110,6 +111,7 @@ def add_detection_flags(heads, phots, snr_limit=5.0, show_progress_bar=True):
     for file_idx, head_block in tqdm(grouped, disable=not show_progress_bar):
         phot = out_phots[file_idx]
         # pull out the .values once for speed
+        times      = phot['MJD'].values
         flux_arr   = phot['FLUXCAL'].values
         ferr_arr   = phot['FLUXCALERR'].values
         snr_arr    = phot['SNR'].values
@@ -129,7 +131,13 @@ def add_detection_flags(heads, phots, snr_limit=5.0, show_progress_bar=True):
             det_arr[rng[mask]] = 1.0
 
             # mark head as detected if any True in mask
-            out_heads.at[i, 'DETECTED'] = bool(mask.any())
+            detected = bool(mask.any())
+            out_heads.at[i, 'DETECTED'] = detected
+            if detected:
+                idx_trigger = rng[mask][-1]
+                t_trigger = times[idx_trigger]
+                out_heads.at[i, 'T_TRIGGER'] = t_trigger
+
 
         # arrays mutated in-place, so just reassign
         out_phots[file_idx] = phot
@@ -637,7 +645,9 @@ def join_transient_images(
         stack_fn = lambda phot: phot
 
     snid_phots = []
-    for i, (_, img_head) in enumerate(snid_heads.iterrows()):
+    snid_heads_sorted = snid_heads.sort_values(by='T_TRIGGER') 
+
+    for i, (_, img_head) in enumerate(snid_heads_sorted.iterrows()):
         
         img_phot = get_light_curve(img_head, phots, columns_to_add=added_columns)
         img_phot = process_light_curve(img_phot, added_columns=added_columns)
@@ -652,7 +662,6 @@ def join_transient_images(
         img_phot = img_phot.rename(columns=name_mapping)
 
         snid_phots.append(img_phot)
-
 
     merged_snid_phot = merge_frames(snid_phots, on='MJD')
     n_images = len(snid_phots)
