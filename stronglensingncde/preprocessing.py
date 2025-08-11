@@ -705,7 +705,7 @@ def join_multiclass_labels(
 
     return labels
 
-def _unity(x):
+def _unity(x, *args, **kwargs):
     return x
 
 def transform_image_timeseries(
