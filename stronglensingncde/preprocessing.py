@@ -212,6 +212,7 @@ def sample_light_curve_coords(
     ra_arr[abs_pos]    = ra0  + d_ra
     dec_arr[abs_pos]   = dec0 + d_dec
 
+    
     # Fill Forced Photometry Before First Detection
     if abs_pos[-1] < i1:
         first_err = err[-1]
@@ -222,6 +223,18 @@ def sample_light_curve_coords(
         err_arr[forced_pos] = first_err
         ra_arr[forced_pos] = first_ra
         dec_arr[forced_pos] = first_dec
+
+    # Fill Forced Photometry After Last Detection
+    if abs_pos[0] > i0:
+        last_err = err[0]
+        last_ra = ra0 + d_ra[0]
+        last_dec = dec0 + d_dec[0]
+        forced_pos = np.arange(i0, abs_pos[0])
+        #forced_pos = np.arange(abs_pos[-1]+1, i1)
+
+        err_arr[forced_pos] = last_err
+        ra_arr[forced_pos] = last_ra
+        dec_arr[forced_pos] = last_dec
 
     # pandas will see the mutated arrays
     return phots
@@ -243,6 +256,12 @@ def add_coords_to_timeseries(heads, phots_list):
             phot = sample_light_curve_coords(head, phot)
 
         phots_list[file_idx] = phot
+    
+    cols = ['RA', 'DEC', 'POS_ERR']
+    for i, phot in enumerate(phots_list):
+
+        phot.loc[:, cols] = phot[cols].bfill()
+        phots_list[i] = phot  
 
     return phots_list
 
@@ -749,6 +768,68 @@ def transform_image_timeseries(
 
 
     return image_timeseries, trigger_index, transformed_flux, transformed_flux_errs
+
+def calculate_pair_matrices(
+    joint_photometry,
+    max_images = 4,
+    scale = u.deg.to(u.arcsec)
+):
+
+    pos = joint_photometry.filter(regex=r'POS_(?!ERR)').values
+    pos = pos.reshape((pos.shape[0], max_images, -1))
+
+    diffs = (pos[:, :, None, :] - pos[:, None, :, :])
+    pos1 = pos[:, :, None, :]
+    pos2 = pos[:, None, :, :]
+
+    diffs = (pos1 - pos2) * scale
+    diffs[np.isnan(pos1) & np.isnan(pos2)] = np.nan
+    
+    i, j = np.triu_indices(n=max_images, k=1)
+
+    dists = np.linalg.norm(diffs, axis=-1)
+
+    diffs = diffs[:, i,j]
+    dists = dists[:, i,j]
+
+    errs = joint_photometry.filter(like='POS_ERR').values
+    err1 = errs[:, None, :]**2
+    err2 = errs[:, :, None]**2
+
+    comb_errs = np.sqrt(
+        np.nan_to_num(err1) + np.nan_to_num(err2)
+    )
+    comb_errs[np.isnan(err1) & np.isnan(err2)] = np.nan
+
+    indeces = np.arange(max_images)
+    comb_errs[:, indeces, indeces] /= np.sqrt(2)
+    l, m = np.triu_indices(n=max_images, k=0)
+    comb_errs = comb_errs[:, l, m]
+
+    return diffs, dists, comb_errs
+
+def calculate_adjacency_mask(
+    joint_photometry, max_images=4,
+    n_bands=6
+):
+    
+    flux = joint_photometry.filter(regex=r'FLUX_(?!ERR)')
+    has_flux = np.nansum(
+        flux.values.reshape(
+            flux.shape[0], max_images, n_bands
+        ),
+        axis=-1
+    ) != 0.0
+
+    has_flux1 = has_flux[:, None, :]
+    has_flux2 = has_flux[:, :, None]
+
+    mask = has_flux1 & has_flux2
+
+    i, j = np.triu_indices(n=max_images, k=0)
+    mask = mask[:, i, j]
+
+    return mask
 
 def serialize_lightcurves(
     heads,
