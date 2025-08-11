@@ -7,6 +7,7 @@ import astropy.table as at
 
 from tqdm import tqdm
 from pathlib import Path
+from typing import Callable
 from astropy.io import fits
 from functools import reduce
 from collections import defaultdict
@@ -704,10 +705,15 @@ def join_multiclass_labels(
 
     return labels
 
+def _unity(x):
+    return x
+
 def transform_image_timeseries(
     image_timeseries: pd.DataFrame,
-    flux_transform: callable,
-    fluxerr_transform: callable,
+    time_transform: Callable = _unity,
+    flux_transform: Callable = _unity,
+    fluxerr_transform: Callable = _unity,
+    poserr_transform: Callable = _unity,
 ) -> pd.DataFrame:
 
     image_timeseries = image_timeseries.copy()
@@ -722,14 +728,21 @@ def transform_image_timeseries(
 
     flux_columns = [col for col in image_timeseries.columns if '_FLUX' in col and 'ERR' not in col]
     fluxerr_columns = [col for col in image_timeseries.columns if '_FLUXERR' in col]
+    poserr_columns = [col for col in image_timeseries.columns if 'POS_ERR' in col]
 
-    transformed_flux = flux_transform(image_timeseries[flux_columns].values)
+    flux = image_timeseries[flux_columns].values
+    transformed_flux = flux_transform(flux)
     image_timeseries[flux_columns] = transformed_flux
-        
-    transformed_flux_errs = fluxerr_transform(image_timeseries[fluxerr_columns].values)
+    
+    flux_errs = image_timeseries[fluxerr_columns].values
+    transformed_flux_errs = fluxerr_transform(flux_errs)
     image_timeseries[fluxerr_columns] = transformed_flux_errs
 
-    image_timeseries['TRANS_MJD'] = (image_timeseries['MJD'].values - t_trigger) / 1000.
+    pos_errs = image_timeseries[poserr_columns].values
+    transformed_pos_errs = poserr_transform(pos_errs)
+    image_timeseries[poserr_columns] = transformed_pos_errs
+
+    image_timeseries['TRANS_MJD'] = time_transform(t, t_trigger)
 
     new_column_names = [(old_name, 'TRANS_' + old_name) for old_name in flux_columns + fluxerr_columns]
     image_timeseries = image_timeseries.rename(columns=dict(new_column_names))
