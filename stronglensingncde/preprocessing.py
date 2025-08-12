@@ -785,7 +785,7 @@ def calculate_pair_matrices(
     diffs = (pos1 - pos2) * scale
     diffs[np.isnan(pos1) & np.isnan(pos2)] = np.nan
     
-    i, j = np.triu_indices(n=max_images, k=1)
+    i, j = np.triu_indices(n=max_images)
 
     dists = np.linalg.norm(diffs, axis=-1)
 
@@ -803,8 +803,7 @@ def calculate_pair_matrices(
 
     indeces = np.arange(max_images)
     comb_errs[:, indeces, indeces] /= np.sqrt(2)
-    l, m = np.triu_indices(n=max_images, k=0)
-    comb_errs = comb_errs[:, l, m]
+    comb_errs = comb_errs[:, i, j]
 
     return diffs, dists, comb_errs
 
